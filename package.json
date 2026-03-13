@@ -1,0 +1,22 @@
+{
+  "name": "facebook-automation",
+  "version": "1.0.0",
+  "description": "Facebook Page monitor bot with auto Like, Comment, Share",
+  "main": "index.js",
+  "scripts": {
+    "proxy:check": "node proxyCheck.js",
+    "login": "node login.js",
+    "login:all": "node login.js --all",
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "playwright": "^1.44.0",
+    "openai": "^4.52.0"
+  }
+}

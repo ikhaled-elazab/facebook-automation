@@ -1,0 +1,37 @@
+[
+  {
+    "name": "account1",
+    "email": "asmaaabaaldahab@outlook.com",
+    "password": "Asmaa@aba1",
+    "sessionFile": "sessions/account1.json",
+    "lastPostFile": "state/account1_last_post.txt",
+    "targetPageUrl": "https://www.facebook.com/profile.php?id=100079679291285",
+    "checkIntervalMinutes": 7,
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "locale": "en-US",
+    "timezoneId": "America/New_York",
+    "proxy": {
+      "server": "http://PROXY_HOST_1:PORT",
+      "username": "PROXY_USER_1",
+      "password": "PROXY_PASS_1"
+    },
+    "groups": [
+      "https://www.facebook.com/groups/2391725291331198"
+    ],
+    "comments": [
+      "Great post! Thanks for sharing 🙌",
+      "Very informative, appreciate the update!",
+      "Love this content, keep it up! 👏",
+      "This is exactly what I needed to see today.",
+      "Awesome post as always 🔥"
+    ],
+    "ownProfileUrl": "https://www.facebook.com/profile.php?id=61583631420544",
+    "replies": [
+      "Thank you! 🙏",
+      "Glad you found it useful!",
+      "Appreciate your comment! ❤️",
+      "Thanks for engaging! 😊",
+      "So happy you liked it!"
+    ]
+  }
+]

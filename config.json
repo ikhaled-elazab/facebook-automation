@@ -1,0 +1,18 @@
+{
+  "headless": true,
+  "useProxy": false,
+
+  "delays": {
+    "minActionMs": 5000,
+    "maxActionMs": 15000,
+    "minTypingMs": 80,
+    "maxTypingMs": 220
+  },
+
+  "accountStaggerMs": 45000,
+
+  "openaiApiKey": "",
+  "useAI": false,
+  "logDir": "logs",
+  "screenshotOnError": true
+}
