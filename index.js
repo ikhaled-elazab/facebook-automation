@@ -20,6 +20,7 @@ const config = require('./config.json');
 const accounts = require('./accounts.json');
 const logger = require('./logger.js');
 const { generateComment, generateReply } = require('./ai.js');
+const { aiAct } = config.useVision ? require('./vision.js') : { aiAct: null };
 
 chromium.use(StealthPlugin());
 
@@ -93,11 +94,42 @@ function writeSeenComments(account, postUrl, seenSet) {
   fs.writeFileSync(filePath, JSON.stringify([...seenSet], null, 2), 'utf8');
 }
 
+function cleanFbUrl(url) {
+  if (!url) return url;
+  try {
+    const u = new URL(url);
+    // Remove Facebook tracking / session params
+    ['__cft__', '__tn__', '__xts__', 'ref', 'refid', 'fref', 'hc_ref', 'source'].forEach((p) => u.searchParams.delete(p));
+    // Also remove any bracket-suffixed cft params like __cft__[0]
+    for (const key of [...u.searchParams.keys()]) {
+      if (key.startsWith('__cft__') || key.startsWith('__tn__')) u.searchParams.delete(key);
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 function addSharedPost(account, url) {
   if (!url) return;
+  const clean = cleanFbUrl(url);
   const existing = readSharedPosts(account);
-  if (!existing.includes(url)) {
-    writeSharedPosts(account, [...existing, url]);
+  if (!existing.includes(clean)) {
+    writeSharedPosts(account, [...existing, clean]);
+  }
+}
+
+function extractUserIdFromProfileUrl(account) {
+  if (!account.ownProfileUrl) return null;
+  try {
+    const url = new URL(account.ownProfileUrl);
+    // profile.php?id=123456 format
+    const idParam = url.searchParams.get('id');
+    if (idParam) return idParam;
+    // facebook.com/username format — return the last path segment
+    return url.pathname.split('/').filter(Boolean).pop() || null;
+  } catch {
+    return null;
   }
 }
 
@@ -107,7 +139,7 @@ function sleep(ms) {
 
 // ─── Retry wrapper ────────────────────────────────────────────────────────────
 
-async function withRetry(fn, page, account, actionName, maxAttempts = 3, delayMs = 3000) {
+async function withRetry(fn, page, account, actionName, maxAttempts = 3, delayMs = 3000, visionGoal) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await fn();
@@ -126,6 +158,16 @@ async function withRetry(fn, page, account, actionName, maxAttempts = 3, delayMs
         } catch {
           // ignore screenshot errors
         }
+      }
+
+      if (attempt === maxAttempts && config.useVision && visionGoal && aiAct) {
+        logger.log(account.name, actionName, 'Hardcoded selectors exhausted — trying vision fallback...');
+        const ok = await aiAct(page, visionGoal, account).catch((e) => {
+          logger.warn(account.name, actionName, `Vision fallback threw: ${e.message}`);
+          return false;
+        });
+        if (ok) { logger.log(account.name, actionName, 'Vision fallback succeeded.'); return true; }
+        logger.warn(account.name, actionName, 'Vision fallback also failed.');
       }
 
       if (attempt < maxAttempts) {
@@ -223,18 +265,34 @@ async function getLatestProfilePost(page, profileUrl) {
     await randomDelay(800, 1500);
   }
 
-  // Find the first article in the feed (newest post) and grab its post link
+  // Find the first article in the feed (newest post) and grab its post link.
+  // Exclude comment links (comment_id=) — those are timestamp links on old posts, not the shared post itself.
   const postUrl = await page.evaluate(() => {
     const articles = Array.from(document.querySelectorAll('[role="article"]'));
     for (const article of articles) {
       const links = Array.from(article.querySelectorAll('a[href]'));
-      const found = links.find((a) =>
-        a.href.includes('/posts/') ||
-        a.href.includes('story_fbid=') ||
-        a.href.includes('/permalink/') ||
-        a.href.includes('permalink.php')
-      );
-      if (found) return found.href;
+      const found = links.find((a) => {
+        const h = a.href;
+        if (h.includes('comment_id=')) return false;
+        return (
+          h.includes('/posts/') ||
+          h.includes('story_fbid=') ||
+          h.includes('/permalink/') ||
+          h.includes('permalink.php')
+        );
+      });
+      if (found) {
+        // Strip tracking params, keep only story_fbid and id
+        try {
+          const u = new URL(found.href);
+          const clean = new URL('https://www.facebook.com/permalink.php');
+          if (u.searchParams.get('story_fbid')) clean.searchParams.set('story_fbid', u.searchParams.get('story_fbid'));
+          if (u.searchParams.get('id')) clean.searchParams.set('id', u.searchParams.get('id'));
+          return clean.toString();
+        } catch {
+          return found.href;
+        }
+      }
     }
     return null;
   });
@@ -253,17 +311,120 @@ async function getLatestPostInGroup(page, groupUrl) {
 
   const postUrl = await page.evaluate(() => {
     const anchors = Array.from(document.querySelectorAll('a[href]'));
-    const found = anchors.find((a) => {
+    
+    // 1. Prioritize timestamp links: role="link" + group post pattern + outside message
+    const timestampLink = anchors.find((a) => {
       const h = a.href;
-      return (
-        (/\/groups\/[^/]+\/posts\//.test(h) || /story_fbid=/.test(h)) &&
-        !h.includes('comment_id=')
-      );
+      const isGroupPost = /\/groups\/[^/]+\/posts\//.test(h);
+      const isRoleLink = a.getAttribute('role') === 'link';
+      // Post links usually don't have too much query noise in the path itself, 
+      // but they DO have tracking params which we clean later.
+      return isGroupPost && isRoleLink && !h.includes('comment_id=') && !a.closest('[data-ad-rendering-role="story_message"]');
     });
-    return found ? found.href : null;
+    if (timestampLink) return timestampLink.href;
+
+    // 2. Fallback: Any group post link outside message
+    const groupPost = anchors.find((a) => {
+      const h = a.href;
+      return /\/groups\/[^/]+\/posts\//.test(h) && !h.includes('comment_id=') && !a.closest('[data-ad-rendering-role="story_message"]');
+    });
+    if (groupPost) return groupPost.href;
+
+    // 3. Fallback to story_fbid or permalink links found outside the message content
+    const fallback = anchors.find((a) => {
+      const h = a.href;
+      return (/story_fbid=/.test(h) || /\/permalink\.php/.test(h)) && 
+             !h.includes('comment_id=') && 
+             !a.closest('[data-ad-rendering-role="story_message"]');
+    });
+    return fallback ? fallback.href : null;
   });
 
   return postUrl || null;
+}
+
+async function getLatestPostInGroupByUser(page, groupUrl, account) {
+  const userId = extractUserIdFromProfileUrl(account);
+  if (!userId) {
+    logger.warn(account.name, 'SHARE', 'Cannot extract user ID from ownProfileUrl — falling back to group feed.');
+    return getLatestPostInGroup(page, groupUrl);
+  }
+
+  // Navigate to "My posts" page inside the group: groupUrl/user/userId
+  const myPostsUrl = groupUrl.replace(/\/$/, '') + '/user/' + userId + '/';
+  logger.log(account.name, 'SHARE', `Checking own posts in group: ${myPostsUrl}`);
+
+  await page.goto(myPostsUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await randomDelay(3000, 5000);
+
+  // Wait for feed content to appear (articles or feed container)
+  try {
+    await page.waitForSelector('[role="article"], [role="feed"]', { timeout: 15000 });
+    logger.log(account.name, 'SHARE', 'Feed content detected on user page.');
+  } catch {
+    logger.warn(account.name, 'SHARE', 'No feed/article elements appeared within 15s.');
+  }
+
+  // Scroll more to ensure posts load
+  for (let i = 0; i < 6; i++) {
+    await page.evaluate(() => window.scrollBy(0, 600));
+    await randomDelay(1000, 1800);
+  }
+
+  // Scroll back up to see the first/latest post
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await randomDelay(1500, 2500);
+
+  const postUrl = await page.evaluate(() => {
+    const anchors = Array.from(document.querySelectorAll('a[href]'));
+    
+    // 1. Prioritize timestamp links: role="link" + group post pattern + outside message
+    const timestampLink = anchors.find((a) => {
+      const h = a.href;
+      const isGroupPost = /\/groups\/[^/]+\/posts\//.test(h) || h.includes('multi_permalinks=');
+      const isRoleLink = a.getAttribute('role') === 'link';
+      return isGroupPost && isRoleLink && !h.includes('comment_id=') && !a.closest('[data-ad-rendering-role="story_message"]');
+    });
+    if (timestampLink) return timestampLink.href;
+
+    // 2. Fallback: Any group post link outside message
+    const groupPost = anchors.find((a) => {
+      const h = a.href;
+      const isGroupPost = /\/groups\/[^/]+\/posts\//.test(h) || h.includes('multi_permalinks=');
+      return isGroupPost && !h.includes('comment_id=') && !a.closest('[data-ad-rendering-role="story_message"]');
+    });
+    if (groupPost) return groupPost.href;
+
+    // 3. Fallback to story_fbid or permalink links found outside the message content
+    const fallback = anchors.find((a) => {
+      const h = a.href;
+      return (/story_fbid=/.test(h) || /\/permalink\.php/.test(h)) && 
+             !h.includes('comment_id=') && 
+             !a.closest('[data-ad-rendering-role="story_message"]');
+    });
+    return fallback ? fallback.href : null;
+  });
+
+  if (postUrl) return postUrl;
+
+  // Debug: Log all hrefs on the page to understand what's there
+  const allHrefs = await page.evaluate(() => {
+    return Array.from(document.querySelectorAll('a[href]'))
+      .map(a => a.href)
+      .filter(h => h.includes('/groups/') || h.includes('story_fbid') || h.includes('permalink'))
+      .slice(0, 15);
+  });
+  logger.warn(account.name, 'SHARE', `Debug — relevant links on user page: ${JSON.stringify(allHrefs)}`);
+
+  // Take screenshot for debugging
+  try {
+    const ssPath = path.join(__dirname, 'logs', 'screenshots', `${account.name}_GROUP_USER_PAGE_${Date.now()}.png`);
+    await page.screenshot({ path: ssPath, fullPage: false });
+    logger.warn(account.name, 'SHARE', `Screenshot saved: ${ssPath}`);
+  } catch {}
+
+  logger.warn(account.name, 'SHARE', 'No posts found on user page — falling back to group feed.');
+  return getLatestPostInGroup(page, groupUrl);
 }
 
 async function likePost(page, postUrl, account) {
@@ -272,43 +433,131 @@ async function likePost(page, postUrl, account) {
   await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await randomDelay(4000, 8000);
 
-  // Skip if already liked (button would show "Unlike")
-  const alreadyLiked = await page.$('[aria-label="Unlike"], [aria-label="إلغاء الإعجاب"]');
-  if (alreadyLiked) {
-    logger.log(account.name, 'LIKE', 'Post already liked, skipping.');
-    return;
-  }
-
-  // Target the post-level Like button specifically via data-ad-rendering-role
-  const selectors = [
-    'div[role="button"]:has([data-ad-rendering-role="like_button"])',
-    '[aria-label="Like"][role="button"]',
-    '[aria-label="أعجبني"][role="button"]',
+  // Wait for the dialog/modal to open
+  const dialogSelectors = [
+    '[role="dialog"]',
+    'div[class] > div[class] > div[class]:has(> div[aria-label="Close"])',
   ];
 
-  let clicked = false;
-  for (const sel of selectors) {
-    const btn = await page.$(sel);
-    if (btn) {
-      await btn.scrollIntoViewIfNeeded();
-      await randomDelay(1000, 2000);
-      const box = await btn.boundingBox();
-      if (box) {
-        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-      } else {
-        await btn.click();
-      }
-      await randomDelay(1000, 2000);
-      clicked = true;
-      logger.log(account.name, 'LIKE', '✓ Post liked.');
+  let dialog = null;
+  for (const sel of dialogSelectors) {
+    dialog = await page.waitForSelector(sel, { timeout: 5000, state: 'visible' }).catch(() => null);
+    if (dialog) {
+      logger.log(account.name, 'LIKE', `Dialog found with selector: ${sel}`);
       break;
     }
   }
 
-  if (!clicked) {
+  if (!dialog) {
+    logger.warn(account.name, 'LIKE', 'Dialog did not open, trying page-level search...');
+  }
+
+  // JS-scroll the inner scrollable container of the dialog.
+  // mouse.wheel doesn't reach inner scrollable divs — must use scrollTop directly.
+  await page.evaluate(() => {
+    // Find the deepest scrollable element inside the dialog
+    const dlg = document.querySelector('[role="dialog"]')
+      || document.querySelector('[aria-label="Close"]')?.closest('div[class]');
+    if (!dlg) { window.scrollBy(0, 2000); return; }
+
+    // Walk all descendants and scroll any that have overflow
+    let scrolled = false;
+    const all = Array.from(dlg.querySelectorAll('*')).reverse(); // innermost first
+    for (const el of all) {
+      if (el.scrollHeight > el.clientHeight + 10) {
+        el.scrollTop = el.scrollHeight; // scroll all the way down
+        scrolled = true;
+        break; // only the first/deepest scrollable
+      }
+    }
+    if (!scrolled) dlg.scrollTop = dlg.scrollHeight;
+  });
+  await randomDelay(1500, 2500);
+
+  const scope = dialog || page;
+
+  // Check if the post is already liked
+  // The user provided the exact HTML snippet: the "Remove Like" button is a [role="button"] 
+  // that CONTAINS a div with data-ad-rendering-role="like_button".
+  const isAlreadyLiked = await scope.evaluate((node) => {
+    const root = node || document;
+    
+    // 1. Primary approach: Find the main post like button structure
+    const marker = root.querySelector('[data-ad-rendering-role="like_button"]');
+    if (marker) {
+      const btn = marker.closest('[role="button"]');
+      if (btn) {
+        const label = (btn.getAttribute('aria-label') || '').trim();
+        // If the main action button says "Remove Like" or "Unlike", it's already liked.
+        if (label === 'Unlike' || label === 'Remove Like' || label === 'إلغاء الإعجاب') {
+          return true;
+        }
+      }
+    }
+    
+    // 2. Fallback: looking for Unlike strings
+    const unlikes = Array.from(root.querySelectorAll('[aria-label="Unlike"], [aria-label="Remove Like"], [aria-label="إلغاء الإعجاب"]'));
+    for (const btn of unlikes) {
+      // Ensure we don't accidentally grab a comment's Unlike button (which are usually in lists/ul)
+      const inCommentList = btn.closest('ul');
+      if (!inCommentList) return true;
+    }
+    return false;
+  }).catch(() => false);
+
+  if (isAlreadyLiked) {
+    logger.log(account.name, 'LIKE', 'Post already liked, skipping.');
+    return;
+  }
+
+  // Find the actually Like button to click
+  let likeBtn = await scope.evaluateHandle((node) => {
+    const root = node || document;
+    
+    // 1. Primary approach: locate via data-ad-rendering-role marker and find its closest button
+    const marker = root.querySelector('[data-ad-rendering-role="like_button"]');
+    if (marker) {
+      const btn = marker.closest('[role="button"]');
+      if (btn) return btn;
+    }
+
+    // 2. Fallback: search by exact aria-label, ignoring reaction counts and lists
+    const likes = Array.from(root.querySelectorAll('[aria-label="Like"], [aria-label="أعجبني"]'));
+    for (const btn of likes) {
+      const label = (btn.getAttribute('aria-label') || '').trim();
+      if (/^Like$|^أعجبني$/.test(label)) {
+        if (!btn.closest('ul')) {
+          return btn;
+        }
+      }
+    }
+    return null;
+  }).catch(() => null);
+
+  const isLikeBtnValid = likeBtn && (await likeBtn.evaluate(el => el !== null).catch(() => false));
+
+  if (!isLikeBtnValid) {
     logger.warn(account.name, 'LIKE', 'Like button not found.');
     throw new Error('Like button not found');
   }
+
+  // Human-like: scroll button into view, move mouse, then click
+  await likeBtn.scrollIntoViewIfNeeded();
+  await randomDelay(500, 1000);
+
+  const btnBox = await likeBtn.boundingBox();
+  if (btnBox) {
+    const bx = btnBox.x + btnBox.width / 2 + randInt(-3, 3);
+    const by = btnBox.y + btnBox.height / 2 + randInt(-2, 2);
+    await page.mouse.move(bx, by, { steps: randInt(8, 20) });
+    await randomDelay(300, 800);
+    await page.mouse.click(bx, by);
+  } else {
+    await likeBtn.dispatchEvent('click');
+  }
+
+  await randomDelay(1500, 3000);
+  logger.log(account.name, 'LIKE', '✓ Post liked.');
 }
 
 async function commentOnPost(page, postUrl, postText, account) {
@@ -321,22 +570,28 @@ async function commentOnPost(page, postUrl, postText, account) {
 
   await randomDelay();
 
-  // Click the "Leave a comment" button to activate the composer
+  // The post is open as a dialog — scope all selectors inside it
+  const dialog = await page.waitForSelector('[role="dialog"]', { timeout: 15000, state: 'visible' }).catch(() => null);
+  if (!dialog) {
+    logger.warn(account.name, 'COMMENT', 'Dialog not found, cannot comment.');
+    throw new Error('Post dialog not found for commenting');
+  }
+
+  // Click the "Leave a comment" button to activate the composer — scoped to dialog
   for (const sel of [
     '[aria-label="Leave a comment"]',
     '[aria-label="Comment"]',
     '[aria-label="كتابة تعليق"]',
     'div[role="button"]:has([data-ad-rendering-role="comment_button"])',
-    'div[role="button"]:has-text("Comment")',
   ]) {
-    const btn = await page.$(sel);
-    if (btn) { await btn.click({ force: true }); break; }
+    const btn = await dialog.$(sel);
+    if (btn) { await btn.dispatchEvent('click'); break; }
   }
 
   await randomDelay(2000, 4000);
 
   const commentBox = await page.waitForSelector(
-    '[aria-label="Write a comment…"], [aria-label="Write a public comment…"], div[contenteditable="true"][role="textbox"]',
+    '[role="dialog"] [aria-label="Write a comment…"], [role="dialog"] [aria-label="Write a public comment…"], [role="dialog"] div[contenteditable="true"][role="textbox"]',
     { timeout: 15000, state: 'visible' }
   );
 
@@ -362,6 +617,20 @@ async function shareToOwnProfile(page, postUrl, account) {
   await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await randomDelay(3000, 6000);
 
+  // Wait for the dialog/modal to open
+  const dialogSelectors = [
+    '[role="dialog"]',
+    'div[class] > div[class] > div[class]:has(> div[aria-label="Close"])',
+  ];
+
+  let dialog = null;
+  for (const sel of dialogSelectors) {
+    dialog = await page.waitForSelector(sel, { timeout: 5000, state: 'visible' }).catch(() => null);
+    if (dialog) break;
+  }
+
+  const scope = dialog || page;
+
   let shareBtn = null;
   for (const sel of [
     '[aria-label="Send this to friends or post it on your profile."]',
@@ -370,7 +639,7 @@ async function shareToOwnProfile(page, postUrl, account) {
     'div[role="button"]:has-text("Share")',
     '[aria-label="يمكنك إرسال هذا إلى الأصدقاء أو نشره على ملفك الشخصي."]',
   ]) {
-    shareBtn = await page.$(sel);
+    shareBtn = await scope.$(sel);
     if (shareBtn) break;
   }
 
@@ -384,17 +653,31 @@ async function shareToOwnProfile(page, postUrl, account) {
 
   const box = await shareBtn.boundingBox();
   if (box) {
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    // Human-like: move mouse to Share button then click
+    const sx = box.x + box.width / 2 + randInt(-3, 3);
+    const sy = box.y + box.height / 2 + randInt(-2, 2);
+    await page.mouse.move(sx, sy, { steps: randInt(6, 15) });
+    await randomDelay(400, 800);
+    await page.mouse.click(sx, sy);
   } else {
     await shareBtn.click();
   }
 
-  await sleep(2000);
+  await sleep(3000);
 
-  const profileOption = await page.waitForSelector(
+  // "Share now" button — try multiple selectors & text variants
+  let profileOption = null;
+  for (const sel of [
     '[aria-label="Share now"]',
-    { timeout: 10000, state: 'visible' }
-  ).catch(() => null);
+    '[aria-label="Share Now"]',
+    'div[role="menuitem"]:has-text("Share now")',
+    'div[role="option"]:has-text("Share now")',
+    'div[role="button"]:has-text("Share now")',
+    'span:has-text("Share now")',
+  ]) {
+    profileOption = await page.waitForSelector(sel, { timeout: 5000, state: 'visible' }).catch(() => null);
+    if (profileOption) break;
+  }
 
   if (!profileOption) {
     logger.warn(account.name, 'SHARE', '"Share now" button not found in dialog, skipping profile share.');
@@ -429,94 +712,8 @@ async function shareToGroups(page, postUrl, account) {
       logger.log(account.name, 'SHARE', `→ ${groupUrl}`);
       await randomDelay();
 
-      await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-      await randomDelay(3000, 6000);
-
-      let shareBtn = null;
-      for (const sel of [
-        '[aria-label="Send this to friends or post it on your profile."]',
-        '[aria-label="Share"]',
-        'div[role="button"]:has([data-ad-rendering-role="share_button"])',
-        'div[role="button"]:has-text("Share")',
-        '[aria-label="يمكنك إرسال هذا إلى الأصدقاء أو نشره على ملفك الشخصي."]',
-      ]) {
-        shareBtn = await page.$(sel);
-        if (shareBtn) break;
-      }
-
-      if (!shareBtn) {
-        logger.warn(account.name, 'SHARE', `Share button not found, skipping group: ${groupUrl}`);
-        continue;
-      }
-
-      await shareBtn.scrollIntoViewIfNeeded();
-      await randomDelay(800, 1500);
-
-      const boxG = await shareBtn.boundingBox();
-      if (boxG) {
-        await page.mouse.click(boxG.x + boxG.width / 2, boxG.y + boxG.height / 2);
-      } else {
-        await shareBtn.click();
-      }
-
-      const groupListItem = await page.waitForSelector(
-        'div[role="listitem"]:has-text("Group"), div[role="listitem"]:has-text("مجموعة")',
-        { timeout: 10000, state: 'visible' }
-      ).catch(() => null);
-
-      if (!groupListItem) {
-        logger.warn(account.name, 'SHARE', `"Group" option not found in dialog. Using direct fallback...`);
-        await page.keyboard.press('Escape');
-        await randomDelay(1000, 2000);
-        await shareDirectlyToGroup(page, postUrl, groupUrl, account);
-        continue;
-      }
-
-      const groupOption = await groupListItem.$('div[role="button"]') || groupListItem;
-
-      await groupOption.click();
-      await randomDelay(2000, 4000);
-
-      const groupId = groupUrl.replace(/\/$/, '').split('/').pop();
-      const searchBox = await page
-        .waitForSelector('input[placeholder*="group"], input[placeholder*="Group"], input[type="search"]', { timeout: 10000 })
-        .catch(() => null);
-
-      if (searchBox) {
-        await searchBox.type(groupId, { delay: randInt(80, 150) });
-        await randomDelay(2000, 3000);
-        const suggestion = await page.$('div[role="option"], li[role="option"]');
-        if (suggestion) { await suggestion.click(); await randomDelay(1500, 3000); }
-      }
-
-      let posted = false;
-      for (const sel of [
-        'div[aria-label="Post"]:has-text("Post")',
-        'button:has-text("Post")',
-        'div[role="button"]:has-text("Post")',
-      ]) {
-        const btn = await page.$(sel);
-        if (btn) {
-          await btn.click();
-          logger.log(account.name, 'SHARE', `✓ Shared to: ${groupUrl}`);
-          posted = true;
-          break;
-        }
-      }
-
-      await randomDelay(3000, 6000);
-
-      if (posted) {
-        try {
-          const groupPostUrl = await getLatestPostInGroup(page, groupUrl);
-          if (groupPostUrl) {
-            addSharedPost(account, groupPostUrl);
-            logger.log(account.name, 'SHARE', `Tracking group post: ${groupPostUrl}`);
-          }
-        } catch (captureErr) {
-          logger.warn(account.name, 'SHARE', `Could not capture group share URL: ${captureErr.message}`);
-        }
-      }
+      // Always post the link directly to the group wall
+      await shareDirectlyToGroup(page, postUrl, groupUrl, account);
     } catch (err) {
       logger.logError(account.name, 'SHARE', err);
     }
@@ -600,7 +797,7 @@ async function shareDirectlyToGroup(page, postUrl, groupUrl, account) {
 
     if (posted) {
       try {
-        const groupPostUrl = await getLatestPostInGroup(page, groupUrl);
+        const groupPostUrl = await getLatestPostInGroupByUser(page, groupUrl, account);
         if (groupPostUrl) {
           addSharedPost(account, groupPostUrl);
           logger.log(account.name, 'SHARE-FALLBACK', `Tracking group post: ${groupPostUrl}`);
@@ -777,10 +974,24 @@ async function checkAndAct(page, account) {
     logger.log(account.name, 'CHECK', `*** NEW POST DETECTED *** (ID: ${postId})`);
     writeLastPostId(account, postId);
 
-    await withRetry(() => likePost(page, postUrl, account),                page, account, 'LIKE');
-    await withRetry(() => commentOnPost(page, postUrl, postText, account), page, account, 'COMMENT');
-    await withRetry(() => shareToOwnProfile(page, postUrl, account),       page, account, 'SHARE');
-    await withRetry(() => shareToGroups(page, postUrl, account),           page, account, 'SHARE-GROUPS');
+    // Pre-generate comment so vision goal string matches what will be typed
+    const comment = await generateComment(postText, account);
+
+    await withRetry(() => likePost(page, postUrl, account), page, account, 'LIKE', 3, 3000,
+      'Find and click the Like button on this Facebook post. If the post already shows Unlike, the post is already liked — return done immediately.');
+
+    await withRetry(() => commentOnPost(page, postUrl, postText, account), page, account, 'COMMENT', 3, 3000,
+      comment
+        ? `Find the comment input box and type exactly: "${comment}" — then press Enter to submit.`
+        : 'Find the comment input box, type a short positive comment, then press Enter.');
+
+    await sleep(3000);
+
+    await withRetry(() => shareToOwnProfile(page, postUrl, account), page, account, 'SHARE', 3, 3000,
+      'Click the Share button on this post. When the share dialog opens, click "Share now" to share to your own profile.');
+
+    await withRetry(() => shareToGroups(page, postUrl, account), page, account, 'SHARE-GROUPS', 3, 3000,
+      'Click the Share button on this post. In the dialog choose to share to a Group, select the target group, then click Post.');
 
     logger.log(account.name, 'CHECK', `✓ All actions done for post: ${postId}`);
   } catch (err) {

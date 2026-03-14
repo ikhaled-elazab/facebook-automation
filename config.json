@@ -1,5 +1,5 @@
 {
-  "headless": true,
+  "headless": false,
   "useProxy": false,
 
   "delays": {
@@ -11,8 +11,11 @@
 
   "accountStaggerMs": 45000,
 
-  "openaiApiKey": "",
+  "openaiApiKey": "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",
   "useAI": false,
   "logDir": "logs",
-  "screenshotOnError": true
+  "screenshotOnError": true,
+  "useVision": true,
+  "visionModel": "gpt-4o-mini",
+  "visionMaxSteps": 8
 }
