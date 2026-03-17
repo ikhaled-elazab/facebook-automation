@@ -94,6 +94,18 @@ function writeSeenComments(account, postUrl, seenSet) {
   fs.writeFileSync(filePath, JSON.stringify([...seenSet], null, 2), 'utf8');
 }
 
+function dmSentFile(account) {
+  return path.resolve(`state/${account.name}_dm_sent.json`);
+}
+function readDmSent(account) {
+  try { return new Set(JSON.parse(fs.readFileSync(dmSentFile(account), 'utf8'))); }
+  catch { return new Set(); }
+}
+function writeDmSent(account, set) {
+  fs.mkdirSync('state', { recursive: true });
+  fs.writeFileSync(dmSentFile(account), JSON.stringify([...set], null, 2));
+}
+
 function cleanFbUrl(url) {
   if (!url) return url;
   try {
@@ -135,6 +147,49 @@ function extractUserIdFromProfileUrl(account) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ─── Dialog Scope Helper ──────────────────────────────────────────────────────
+
+async function getActivePostScope(page) {
+  // Wait a moment for modal elements to possibly appear
+  await page.waitForTimeout(3000);
+
+  const handle = await page.evaluateHandle(() => {
+    // Helper to verify a container actually holds post/feed elements
+    const isPostContainer = (container) => {
+      if (!container) return false;
+      return !!(
+        container.querySelector('[role="article"]') ||
+        container.querySelector('[data-ad-rendering-role="like_button"]') ||
+        container.querySelector('[aria-label="Like"]') ||
+        container.querySelector('[aria-label="أعجبني"]')
+      );
+    };
+
+    // 1. Try standard dialogs (only if they contain a post)
+    const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'));
+    for (const dialog of dialogs) {
+      if (isPostContainer(dialog)) return dialog;
+    }
+
+    // 2. Try the primary article in the main content area
+    const main = document.querySelector('[role="main"]');
+    if (main) {
+      const mainArticle = main.querySelector('[role="article"]');
+      if (mainArticle) return mainArticle;
+    }
+
+    // 3. Fallback to the first article on the page
+    const fallbackArticle = document.querySelector('[role="article"]');
+    if (fallbackArticle) return fallbackArticle;
+
+    // 4. Ultimate fallback
+    return document;
+  });
+
+  const isElem = await handle.evaluate(n => n && n.nodeType === 1).catch(() => false);
+  return isElem ? handle.asElement() : null;
 }
 
 // ─── Retry wrapper ────────────────────────────────────────────────────────────
@@ -471,48 +526,44 @@ async function likePost(page, postUrl, account) {
   logger.log(account.name, 'LIKE', 'Navigating to post...');
 
   await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  // Wait a bit just in case
   await randomDelay(2000, 4000);
 
-  // Wait for the dialog/modal to open
-  const dialogSelectors = [
-    '[role="dialog"]',
-    'div[class] > div[class] > div[class]:has(> div[aria-label="Close"])',
-  ];
-
-  let dialog = null;
-  for (const sel of dialogSelectors) {
-    dialog = await page.waitForSelector(sel, { timeout: 5000, state: 'visible' }).catch(() => null);
-    if (dialog) {
-      logger.log(account.name, 'LIKE', `Dialog found with selector: ${sel}`);
-      break;
-    }
-  }
+  // Use the robust helper to find the active scope
+  const dialog = await getActivePostScope(page);
 
   if (!dialog) {
     logger.warn(account.name, 'LIKE', 'Dialog did not open, trying page-level search...');
+  } else {
+    logger.log(account.name, 'LIKE', 'Dialog scope found.');
   }
 
-  // JS-scroll the inner scrollable container of the dialog.
-  // mouse.wheel doesn't reach inner scrollable divs — must use scrollTop directly.
-  await page.evaluate(() => {
-    // Find the deepest scrollable element inside the dialog
-    const dlg = document.querySelector('[role="dialog"]')
-      || document.querySelector('[aria-label="Close"]')?.closest('div[class]');
-    if (!dlg) { window.scrollBy(0, 2000); return; }
-
-    // Walk all descendants and scroll any that have overflow
-    let scrolled = false;
-    const all = Array.from(dlg.querySelectorAll('*')).reverse(); // innermost first
-    for (const el of all) {
-      if (el.scrollHeight > el.clientHeight + 10) {
-        el.scrollTop = el.scrollHeight; // scroll all the way down
-        scrolled = true;
-        break; // only the first/deepest scrollable
-      }
-    }
-    if (!scrolled) dlg.scrollTop = dlg.scrollHeight;
+  const hasLikeBtn = () => (dialog || page).evaluate((node) => {
+    const root = node || document;
+    if (root.querySelector('[data-ad-rendering-role="like_button"]')) return true;
+    return Array.from(root.querySelectorAll(
+      '[aria-label="Like"],[aria-label="أعجبني"],[aria-label="Unlike"],[aria-label="Remove Like"],[aria-label="إلغاء الإعجاب"]'
+    )).some(el => !el.closest('ul'));
   });
-  await randomDelay(1500, 2500);
+
+  for (let scrollStep = 0; scrollStep < 12; scrollStep++) {
+    if (await hasLikeBtn()) break;
+    
+    // Ensure mouse is inside the dialog explicitly to trigger internal scroll
+    if (dialog) {
+      try {
+        const inner = await dialog.$('[role="article"], [data-ad-rendering-role="story_message"], div.x1n2onr6');
+        if (inner) await inner.hover({ force: true });
+        else await dialog.hover({ force: true });
+      } catch(e) {}
+    } else {
+      const vs = page.viewportSize();
+      if (vs) await page.mouse.move(vs.width / 2, vs.height / 2);
+    }
+    
+    await page.mouse.wheel(0, 250);
+    await randomDelay(400, 700);
+  }
 
   const scope = dialog || page;
 
@@ -577,7 +628,11 @@ async function likePost(page, postUrl, account) {
   const isLikeBtnValid = likeBtn && (await likeBtn.evaluate(el => el !== null).catch(() => false));
 
   if (!isLikeBtnValid) {
-    logger.warn(account.name, 'LIKE', 'Like button not found.');
+    logger.warn(account.name, 'LIKE', 'Like button not found. Dumping DOM of scope...');
+    try {
+      const htmlDump = await scope.evaluate(node => (node || document).innerHTML);
+      require('fs').writeFileSync('debug_dom_scope.html', htmlDump);
+    } catch(e) {}
     throw new Error('Like button not found');
   }
 
@@ -610,14 +665,15 @@ async function commentOnPost(page, postUrl, postText, account) {
 
   await randomDelay();
 
-  // The post is open as a dialog — scope all selectors inside it
-  const dialog = await page.waitForSelector('[role="dialog"]', { timeout: 15000, state: 'visible' }).catch(() => null);
+  // The post is open as a dialog, or it's a standalone page
+  const dialog = await getActivePostScope(page);
+  const scope = dialog || page;
+
   if (!dialog) {
-    logger.warn(account.name, 'COMMENT', 'Dialog not found, cannot comment.');
-    throw new Error('Post dialog not found for commenting');
+    logger.warn(account.name, 'COMMENT', 'Dialog not found, using page-level scope...');
   }
 
-  // Click the "Leave a comment" button to activate the composer — scoped to dialog
+  // Click the "Leave a comment" button to activate the composer — scoped to active post
   for (const sel of [
     '[aria-label="Leave a comment"]',
     '[aria-label="Comment"]',
@@ -631,7 +687,7 @@ async function commentOnPost(page, postUrl, postText, account) {
   await randomDelay(2000, 4000);
 
   const commentBox = await page.waitForSelector(
-    '[role="dialog"] [aria-label="Write a comment…"], [role="dialog"] [aria-label="Write a public comment…"], [role="dialog"] div[contenteditable="true"][role="textbox"]',
+    '[aria-label="Write a comment…"], [aria-label="Write a public comment…"], div[contenteditable="true"][role="textbox"]',
     { timeout: 15000, state: 'visible' }
   );
 
@@ -655,24 +711,12 @@ async function shareToOwnProfile(page, postUrl, account) {
   logger.log(account.name, 'SHARE', 'Sharing to own profile...');
 
   // If the post dialog is already open (e.g. we just commented), skip navigation.
-  const dialogSelectors = [
-    '[role="dialog"]',
-    'div[class] > div[class] > div[class]:has(> div[aria-label="Close"])',
-  ];
-
-  let dialog = null;
-  for (const sel of dialogSelectors) {
-    dialog = await page.$(sel).catch(() => null);
-    if (dialog) break;
-  }
+  let dialog = await getActivePostScope(page);
 
   if (!dialog) {
     await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await randomDelay(3000, 6000);
-    for (const sel of dialogSelectors) {
-      dialog = await page.waitForSelector(sel, { timeout: 5000, state: 'visible' }).catch(() => null);
-      if (dialog) break;
-    }
+    dialog = await getActivePostScope(page);
   }
 
   const scope = dialog || page;
@@ -860,6 +904,89 @@ async function shareDirectlyToGroup(page, postUrl, groupUrl, account) {
   }
 }
 
+// ─── DM to commenter ──────────────────────────────────────────────────────────
+
+async function sendDmToUser(page, account, profileUrl) {
+  if (config.enableDmToCommenters === false) return;
+  if (!account.sendDmToCommenters) return;
+  if (!account.dmMessages || !account.dmMessages.length) return;
+
+  // Self-DM guard
+  if (account.ownProfileUrl && cleanFbUrl(profileUrl) === cleanFbUrl(account.ownProfileUrl)) {
+    logger.warn(account.name, 'DM', 'Skipping DM — profile URL matches own profile.');
+    return;
+  }
+
+  const dmSent = readDmSent(account);
+  const cleanUrl = cleanFbUrl(profileUrl);
+  if (dmSent.has(cleanUrl)) {
+    logger.log(account.name, 'DM', `Already DM'd ${cleanUrl}, skipping.`);
+    return;
+  }
+
+  try {
+    logger.log(account.name, 'DM', `Navigating to profile: ${cleanUrl}`);
+    await page.goto(cleanUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await randomDelay(3000, 6000);
+
+    // Find "Message" button
+    let msgBtn = null;
+    for (const sel of [
+      '[aria-label="Message"]',
+      'div[role="button"]:has-text("Message")',
+      'a[role="button"]:has-text("Message")',
+    ]) {
+      msgBtn = await page.$(sel);
+      if (msgBtn) break;
+    }
+
+    if (!msgBtn) {
+      logger.warn(account.name, 'DM', `Message button not found on ${cleanUrl}`);
+      return;
+    }
+
+    await msgBtn.scrollIntoViewIfNeeded();
+    await randomDelay(800, 1500);
+    await msgBtn.click({ force: true });
+    await randomDelay(3000, 5000);
+
+    // Find chat input
+    let chatBox = null;
+    for (const sel of [
+      'div[role="combobox"][contenteditable="true"]',
+      'div[contenteditable="true"][aria-label*="Message"]',
+      'div[contenteditable="true"][aria-placeholder*="Aa"]',
+    ]) {
+      chatBox = await page.$(sel);
+      if (chatBox) break;
+    }
+
+    if (!chatBox) {
+      logger.warn(account.name, 'DM', `Chat input not found after opening Messenger for ${cleanUrl}`);
+      return;
+    }
+
+    await chatBox.click();
+    await randomDelay(500, 1000);
+
+    const message = pickRandom(account.dmMessages);
+    for (const char of message) {
+      await page.keyboard.type(char);
+      await sleep(randInt(config.delays.minTypingMs, config.delays.maxTypingMs));
+    }
+
+    await randomDelay(1000, 2000);
+    await page.keyboard.press('Enter');
+    await randomDelay(2000, 3000);
+
+    dmSent.add(cleanUrl);
+    writeDmSent(account, dmSent);
+    logger.log(account.name, 'DM', `✓ DM sent to: ${cleanUrl}`);
+  } catch (err) {
+    logger.warn(account.name, 'DM', `DM failed for ${cleanUrl}: ${err.message}`);
+  }
+}
+
 // ─── Comment monitoring ───────────────────────────────────────────────────────
 
 async function monitorAndReplyToComments(page, account) {
@@ -973,6 +1100,21 @@ async function monitorAndReplyToComments(page, account) {
           const nameMatch = articleLabel.match(/^Comment by (.+?) \d/);
           const commenterName = nameMatch ? nameMatch[1].trim() : null;
 
+          // Extract commenter profile URL from the comment article
+          let commenterProfileUrl = null;
+          try {
+            commenterProfileUrl = await article.evaluate((el) => {
+              for (const a of el.querySelectorAll('a[href*="facebook.com"]')) {
+                const href = a.href || '';
+                if (href.includes('comment_id=')) continue;
+                if (href.includes('/groups/') || href.includes('/pages/')) continue;
+                if (href.includes('profile.php') || /facebook\.com\/[^/?#]+\/?$/.test(href)) return href;
+              }
+              return null;
+            });
+            if (commenterProfileUrl) commenterProfileUrl = cleanFbUrl(commenterProfileUrl);
+          } catch { /* ignore */ }
+
           // Like the comment
           try {
             const likeBtn = await article.$('[aria-label="Like"]');
@@ -1038,6 +1180,18 @@ async function monitorAndReplyToComments(page, account) {
             }
           } catch (replyErr) {
             logger.warn(account.name, 'COMMENTS', `Could not reply to comment ${commentId}: ${replyErr.message}`);
+          }
+
+          // Send DM to commenter (navigates away and back)
+          if (commenterProfileUrl && account.sendDmToCommenters) {
+            await sendDmToUser(page, account, commenterProfileUrl).catch((e) =>
+              logger.warn(account.name, 'DM', `DM failed: ${e.message}`)
+            );
+            await randomDelay(3000, 6000);
+            // Navigate back — sendDmToUser left us on the commenter's profile
+            await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+            await randomDelay(3000, 5000);
+            // Remaining article handles are stale; the outer articleErr catch handles this gracefully
           }
 
           seenComments.add(commentId);

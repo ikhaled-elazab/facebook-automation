@@ -17,5 +17,7 @@
   "screenshotOnError": true,
   "useVision": true,
   "visionModel": "gpt-4o-mini",
-  "visionMaxSteps": 8
+  "visionMaxSteps": 8,
+
+  "enableDmToCommenters": true
 }

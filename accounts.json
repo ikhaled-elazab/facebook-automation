@@ -32,6 +32,12 @@
       "Appreciate your comment! ❤️",
       "Thanks for engaging! 😊",
       "So happy you liked it!"
+    ],
+    "sendDmToCommenters": true,
+    "dmMessages": [
+      "Hey! Thanks for your comment, really appreciate it 😊",
+      "Hi! Saw your comment — feel free to reach out anytime!",
+      "Thanks for engaging! Hope to connect more 🙌"
     ]
   }
 ]
