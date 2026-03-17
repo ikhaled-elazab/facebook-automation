@@ -3,10 +3,10 @@
   "useProxy": false,
 
   "delays": {
-    "minActionMs": 5000,
-    "maxActionMs": 15000,
-    "minTypingMs": 80,
-    "maxTypingMs": 220
+    "minActionMs": 2000,
+    "maxActionMs": 5000,
+    "minTypingMs": 220,
+    "maxTypingMs": 500
   },
 
   "accountStaggerMs": 45000,

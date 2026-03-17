@@ -365,47 +365,87 @@ async function getLatestPostInGroupByUser(page, groupUrl, account) {
     logger.warn(account.name, 'SHARE', 'No feed/article elements appeared within 15s.');
   }
 
-  // Scroll more to ensure posts load
-  for (let i = 0; i < 6; i++) {
-    await page.evaluate(() => window.scrollBy(0, 600));
-    await randomDelay(1000, 1800);
-  }
+  // Scan for /groups/.../posts/... links, checking after each scroll step.
+  // Also look for the timestamp link to click if no direct post links appear.
+  const scanForPostLinks = () => page.evaluate(() => {
+    // 1. Direct post permalink links anywhere on page (outside post body)
+    const postLink = Array.from(document.querySelectorAll('a[href]'))
+      .find(a => {
+        const h = a.href;
+        return (
+          /\/groups\/[^/]+\/posts\/[^/?#]+/.test(h) &&
+          !h.includes('comment_id=') &&
+          !a.closest('[data-ad-rendering-role="story_message"]')
+        );
+      });
+    if (postLink) return { type: 'url', value: postLink.href };
 
-  // Scroll back up to see the first/latest post
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await randomDelay(1500, 2500);
-
-  const postUrl = await page.evaluate(() => {
-    const anchors = Array.from(document.querySelectorAll('a[href]'));
-    
-    // 1. Prioritize timestamp links: role="link" + group post pattern + outside message
-    const timestampLink = anchors.find((a) => {
-      const h = a.href;
-      const isGroupPost = /\/groups\/[^/]+\/posts\//.test(h) || h.includes('multi_permalinks=');
-      const isRoleLink = a.getAttribute('role') === 'link';
-      return isGroupPost && isRoleLink && !h.includes('comment_id=') && !a.closest('[data-ad-rendering-role="story_message"]');
+    // 2. Timestamp link to click (relative href with __cft__, outside post body/profile)
+    const dateLink = Array.from(document.querySelectorAll('a[role="link"]')).find(a => {
+      const href = a.getAttribute('href') || '';
+      return (
+        href.startsWith('?') &&
+        href.includes('__cft__') &&
+        !a.closest('[data-ad-rendering-role="story_message"]') &&
+        !a.closest('[data-ad-rendering-role="profile_name"]')
+      );
     });
-    if (timestampLink) return timestampLink.href;
+    if (dateLink) return { type: 'dateLink', value: dateLink.href };
 
-    // 2. Fallback: Any group post link outside message
-    const groupPost = anchors.find((a) => {
-      const h = a.href;
-      const isGroupPost = /\/groups\/[^/]+\/posts\//.test(h) || h.includes('multi_permalinks=');
-      return isGroupPost && !h.includes('comment_id=') && !a.closest('[data-ad-rendering-role="story_message"]');
-    });
-    if (groupPost) return groupPost.href;
-
-    // 3. Fallback to story_fbid or permalink links found outside the message content
-    const fallback = anchors.find((a) => {
-      const h = a.href;
-      return (/story_fbid=/.test(h) || /\/permalink\.php/.test(h)) && 
-             !h.includes('comment_id=') && 
-             !a.closest('[data-ad-rendering-role="story_message"]');
-    });
-    return fallback ? fallback.href : null;
+    return null;
   });
 
-  if (postUrl) return postUrl;
+  let dateLinkHref = null;
+  for (let i = 0; i < 8; i++) {
+    await page.evaluate(() => window.scrollBy(0, 600));
+    await randomDelay(1000, 1800);
+
+    const found = await scanForPostLinks();
+    if (!found) continue;
+    if (found.type === 'url') return found.value.split('?')[0];
+    if (found.type === 'dateLink') { dateLinkHref = found.value; break; }
+  }
+
+  // Click the timestamp — Facebook's SPA router updates the URL to the post permalink
+  if (dateLinkHref) {
+    logger.log(account.name, 'SHARE', 'Clicking post date to resolve permalink...');
+    try {
+      // Remove target="_blank" so the click navigates the current tab
+      await page.evaluate((href) => {
+        const link = Array.from(document.querySelectorAll('a[role="link"]'))
+          .find(a => a.href === href);
+        if (link) link.removeAttribute('target');
+      }, dateLinkHref);
+
+      const dateEl = await page.evaluateHandle((href) =>
+        Array.from(document.querySelectorAll('a[role="link"]')).find(a => a.href === href),
+        dateLinkHref
+      );
+
+      await Promise.all([
+        page.waitForURL(url => /\/groups\/[^/]+\/posts\//.test(url), { timeout: 12000 }).catch(() => {}),
+        dateEl.click(),
+      ]);
+
+      await randomDelay(1500, 2500);
+
+      // After SPA navigation, scan for /posts/ links on the resulting page
+      const urlNow = page.url();
+      if (/\/groups\/[^/]+\/posts\//.test(urlNow)) {
+        return urlNow.split('?')[0];
+      }
+
+      // Page URL didn't change to /posts/ — scan DOM for post links on this page
+      const postLinkOnPage = await page.evaluate(() => {
+        const a = Array.from(document.querySelectorAll('a[href]'))
+          .find(a => /\/groups\/[^/]+\/posts\/[^/?#]+/.test(a.href) && !a.href.includes('comment_id='));
+        return a?.href ?? null;
+      });
+      if (postLinkOnPage) return postLinkOnPage.split('?')[0];
+    } catch (e) {
+      logger.warn(account.name, 'SHARE', `Date click failed: ${e.message}`);
+    }
+  }
 
   // Debug: Log all hrefs on the page to understand what's there
   const allHrefs = await page.evaluate(() => {
@@ -431,7 +471,7 @@ async function likePost(page, postUrl, account) {
   logger.log(account.name, 'LIKE', 'Navigating to post...');
 
   await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await randomDelay(4000, 8000);
+  await randomDelay(2000, 4000);
 
   // Wait for the dialog/modal to open
   const dialogSelectors = [
@@ -614,10 +654,7 @@ async function commentOnPost(page, postUrl, postText, account) {
 async function shareToOwnProfile(page, postUrl, account) {
   logger.log(account.name, 'SHARE', 'Sharing to own profile...');
 
-  await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await randomDelay(3000, 6000);
-
-  // Wait for the dialog/modal to open
+  // If the post dialog is already open (e.g. we just commented), skip navigation.
   const dialogSelectors = [
     '[role="dialog"]',
     'div[class] > div[class] > div[class]:has(> div[aria-label="Close"])',
@@ -625,8 +662,17 @@ async function shareToOwnProfile(page, postUrl, account) {
 
   let dialog = null;
   for (const sel of dialogSelectors) {
-    dialog = await page.waitForSelector(sel, { timeout: 5000, state: 'visible' }).catch(() => null);
+    dialog = await page.$(sel).catch(() => null);
     if (dialog) break;
+  }
+
+  if (!dialog) {
+    await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await randomDelay(3000, 6000);
+    for (const sel of dialogSelectors) {
+      dialog = await page.waitForSelector(sel, { timeout: 5000, state: 'visible' }).catch(() => null);
+      if (dialog) break;
+    }
   }
 
   const scope = dialog || page;
@@ -691,17 +737,20 @@ async function shareToOwnProfile(page, postUrl, account) {
   logger.log(account.name, 'SHARE', '✓ Shared to own profile.');
 
   // Capture the shared post URL for comment monitoring
-  if (account.ownProfileUrl) {
-    try {
-      const sharedPostUrl = await getLatestProfilePost(page, account.ownProfileUrl);
-      if (sharedPostUrl) {
-        addSharedPost(account, sharedPostUrl);
-        logger.log(account.name, 'SHARE', `Tracking profile post: ${sharedPostUrl}`);
-      }
-    } catch (captureErr) {
-      logger.warn(account.name, 'SHARE', `Could not capture profile share URL: ${captureErr.message}`);
+  const profileUrl = account.ownProfileUrl || 'https://www.facebook.com/me';
+  try {
+    const sharedPostUrl = await getLatestProfilePost(page, profileUrl);
+    if (sharedPostUrl) {
+      addSharedPost(account, sharedPostUrl);
+      logger.log(account.name, 'SHARE', `✓ Saved profile post URL: ${sharedPostUrl}`);
+      return sharedPostUrl;
+    } else {
+      logger.warn(account.name, 'SHARE', 'Could not find latest profile post after sharing.');
     }
+  } catch (captureErr) {
+    logger.warn(account.name, 'SHARE', `Could not capture profile share URL: ${captureErr.message}`);
   }
+  return null;
 }
 
 async function shareToGroups(page, postUrl, account) {
@@ -831,25 +880,61 @@ async function monitorAndReplyToComments(page, account) {
       await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await randomDelay(4000, 7000);
 
-      // First scroll pass to load comments
-      for (let i = 0; i < 5; i++) {
+      // Scroll down to load comments, then expand and scroll more.
+      // Repeat until no new comment articles appear (lazy-load stabilised).
+      const countComments = () => page.evaluate(() =>
+        document.querySelectorAll('[role="article"][aria-label*="Comment by"]').length
+      );
+
+      // Initial scroll to get past the post header into the comments section
+      for (let i = 0; i < 4; i++) {
         await page.evaluate(() => window.scrollBy(0, 700));
-        await randomDelay(1000, 2000);
+        await randomDelay(900, 1600);
       }
 
-      // Click "View more comments" if available
+      // Switch comment sort order to "Newest" so new comments appear first.
+      // 1. Click the sort dropdown (shows "Most relevant" by default)
+      const sortBtn = await page.$('[role="button"][aria-haspopup="menu"]:has-text("Most relevant")');
+      if (sortBtn) {
+        await sortBtn.scrollIntoViewIfNeeded();
+        await randomDelay(600, 1200);
+        await sortBtn.click();
+        await randomDelay(1000, 2000);
+        // 2. Click "Newest" from the dropdown
+        const newestItem = await page.waitForSelector('[role="menuitem"]:has-text("Newest")', { timeout: 5000, state: 'visible' }).catch(() => null);
+        if (newestItem) {
+          await newestItem.click({ force: true });
+          await randomDelay(2000, 3500);
+          logger.log(account.name, 'COMMENTS', 'Switched comment sort to Newest.');
+        } else {
+          await page.keyboard.press('Escape');
+        }
+      }
+
+      // Click "View more comments" / "See more comments" if available
       for (const sel of [
         'div[role="button"]:has-text("View more comments")',
         'span:has-text("View more comments")',
+        'div[role="button"]:has-text("See more comments")',
+        'span:has-text("See more comments")',
       ]) {
         const more = await page.$(sel);
         if (more) { await more.click(); await randomDelay(2000, 3000); break; }
       }
 
-      // Second scroll pass after expanding comments
-      for (let i = 0; i < 3; i++) {
-        await page.evaluate(() => window.scrollBy(0, 700));
-        await randomDelay(1000, 2000);
+      // Scroll-until-stable: keep scrolling as long as new comments keep appearing
+      let prevCount = 0;
+      let stableRounds = 0;
+      for (let round = 0; round < 12 && stableRounds < 2; round++) {
+        await page.evaluate(() => window.scrollBy(0, 800));
+        await randomDelay(900, 1500);
+        const cur = await countComments();
+        if (cur === prevCount) {
+          stableRounds++;
+        } else {
+          stableRounds = 0;
+          prevCount = cur;
+        }
       }
 
       // Wait for at least one comment article to appear
@@ -883,6 +968,11 @@ async function monitorAndReplyToComments(page, account) {
           logger.log(account.name, 'COMMENTS', `New comment ID: ${commentId}`);
           newCount++;
 
+          // Extract commenter name from article label for accurate reply box targeting
+          const articleLabel = await article.getAttribute('aria-label') || '';
+          const nameMatch = articleLabel.match(/^Comment by (.+?) \d/);
+          const commenterName = nameMatch ? nameMatch[1].trim() : null;
+
           // Like the comment
           try {
             const likeBtn = await article.$('[aria-label="Like"]');
@@ -904,16 +994,29 @@ async function monitorAndReplyToComments(page, account) {
               await replyBtn.scrollIntoViewIfNeeded();
               await randomDelay(800, 1500);
               await replyBtn.click({ force: true });
-              await randomDelay(2000, 3500);
+              await randomDelay(1500, 3000);
 
-              const replyBox = await page.waitForSelector(
-                'div[contenteditable="true"][role="textbox"]',
-                { timeout: 10000, state: 'visible' }
-              ).catch(() => null);
+              // Target the specific reply box for this comment using the commenter's name.
+              // Facebook sets aria-placeholder="Reply to [Name]…" on the reply input that
+              // belongs to the comment we just clicked — this avoids typing into a wrong box.
+              let replyBox = null;
+              if (commenterName) {
+                replyBox = await page.waitForSelector(
+                  `div[contenteditable="true"][role="textbox"][aria-placeholder="Reply to ${commenterName}…"]`,
+                  { timeout: 8000, state: 'visible' }
+                ).catch(() => null);
+              }
+              if (!replyBox) {
+                // Fallback: any newly-visible reply textbox (not the main comment box)
+                replyBox = await page.waitForSelector(
+                  'div[contenteditable="true"][role="textbox"][aria-placeholder^="Reply to"]',
+                  { timeout: 6000, state: 'visible' }
+                ).catch(() => null);
+              }
 
               if (replyBox) {
                 await replyBox.scrollIntoViewIfNeeded();
-                await replyBox.focus();
+                await replyBox.click();
                 await randomDelay(500, 1000);
 
                 // Extract comment text for AI reply generation
@@ -929,6 +1032,8 @@ async function monitorAndReplyToComments(page, account) {
                 await page.keyboard.press('Enter');
                 await randomDelay(2000, 3000);
                 logger.log(account.name, 'COMMENTS', `✓ Replied to comment ${commentId}: "${reply}"`);
+              } else {
+                logger.warn(account.name, 'COMMENTS', `Reply box not found for comment ${commentId} (commenter: ${commenterName})`);
               }
             }
           } catch (replyErr) {
@@ -987,8 +1092,14 @@ async function checkAndAct(page, account) {
 
     await sleep(3000);
 
-    await withRetry(() => shareToOwnProfile(page, postUrl, account), page, account, 'SHARE', 3, 3000,
+    const profilePostUrl = await withRetry(() => shareToOwnProfile(page, postUrl, account), page, account, 'SHARE', 3, 3000,
       'Click the Share button on this post. When the share dialog opens, click "Share now" to share to your own profile.');
+
+    if (profilePostUrl) {
+      logger.log(account.name, 'CHECK', `Profile post saved (${profilePostUrl}) — proceeding to share to groups.`);
+    } else {
+      logger.warn(account.name, 'CHECK', 'Profile post URL not captured — will share original post URL to groups.');
+    }
 
     await withRetry(() => shareToGroups(page, postUrl, account), page, account, 'SHARE-GROUPS', 3, 3000,
       'Click the Share button on this post. In the dialog choose to share to a Group, select the target group, then click Post.');
@@ -1010,53 +1121,52 @@ async function runAccount(browser, account) {
     return;
   }
 
-  logger.log(account.name, 'BOOT', `Starting with session: ${sessionPath}`);
+  const intervalMs = (account.checkIntervalMinutes || 7) * 60 * 1000;
+  logger.log(account.name, 'BOOT', `Starting. Check interval: ${account.checkIntervalMinutes || 7}m`);
 
-  const contextOptions = {
-    storageState: sessionPath,
-    userAgent: account.userAgent,
-    viewport: { width: 1366, height: 768 },
-    locale: account.locale || 'en-US',
-    timezoneId: account.timezoneId || 'America/New_York',
+  const buildContextOptions = () => {
+    const opts = {
+      storageState: sessionPath,
+      userAgent: account.userAgent,
+      viewport: { width: 1366, height: 768 },
+      locale: account.locale || 'en-US',
+      timezoneId: account.timezoneId || 'America/New_York',
+    };
+    if (config.useProxy && account.proxy && account.proxy.server) {
+      opts.proxy = {
+        server:   account.proxy.server,
+        username: account.proxy.username || undefined,
+        password: account.proxy.password || undefined,
+      };
+      logger.log(account.name, 'BOOT', `Proxy: ${account.proxy.server}`);
+    } else if (config.useProxy) {
+      logger.warn(account.name, 'BOOT', 'useProxy=true but no proxy configured — using VPS IP.');
+    }
+    return opts;
   };
 
-  if (config.useProxy && account.proxy && account.proxy.server) {
-    contextOptions.proxy = {
-      server:   account.proxy.server,
-      username: account.proxy.username || undefined,
-      password: account.proxy.password || undefined,
-    };
-    logger.log(account.name, 'BOOT', `Proxy: ${account.proxy.server}`);
-  } else if (config.useProxy) {
-    logger.warn(account.name, 'BOOT', 'useProxy=true but no proxy configured for this account — using VPS IP.');
-  } else {
-    logger.log(account.name, 'BOOT', 'Proxy disabled (useProxy=false in config.json).');
-  }
-
-  const context = await browser.newContext(contextOptions);
-  const page = await context.newPage();
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-  });
-
-  const intervalMs = (account.checkIntervalMinutes || 7) * 60 * 1000;
-
-  logger.log(account.name, 'BOOT', `Session started. Check interval: ${account.checkIntervalMinutes || 7}m`);
-
-  try {
-    // First check immediately, then on interval
-    await checkAndAct(page, account);
-    await monitorAndReplyToComments(page, account);
-
-    // Use a loop with sleep instead of setInterval so checks never overlap
-    while (true) {
-      await sleep(intervalMs);
+  const runOneCycle = async () => {
+    const context = await browser.newContext(buildContextOptions());
+    const page = await context.newPage();
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    });
+    try {
       await checkAndAct(page, account);
       await monitorAndReplyToComments(page, account);
+    } finally {
+      await context.close().catch(() => {});
+      logger.log(account.name, 'BOOT', 'Browser closed after cycle.');
     }
-  } finally {
-    logger.log(account.name, 'BOOT', 'Session loop ended.');
-    await context.close().catch(() => {});
+  };
+
+  // First check immediately, then on interval
+  await runOneCycle();
+
+  while (true) {
+    logger.log(account.name, 'BOOT', `Sleeping ${account.checkIntervalMinutes || 7}m before next cycle...`);
+    await sleep(intervalMs);
+    await runOneCycle();
   }
 }
 

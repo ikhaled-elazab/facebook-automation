@@ -6,10 +6,10 @@
     "sessionFile": "sessions/account1.json",
     "lastPostFile": "state/account1_last_post.txt",
     "targetPageUrl": "https://www.facebook.com/profile.php?id=100079679291285",
-    "checkIntervalMinutes": 7,
+    "checkIntervalMinutes": 1,
     "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "locale": "en-US",
-    "timezoneId": "America/New_York",
+    "timezoneId": "Africa/Cairo",
     "proxy": {
       "server": "http://PROXY_HOST_1:PORT",
       "username": "PROXY_USER_1",
