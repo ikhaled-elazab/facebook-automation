@@ -906,6 +906,108 @@ async function shareDirectlyToGroup(page, postUrl, groupUrl, account) {
 
 // ─── DM to commenter ──────────────────────────────────────────────────────────
 
+/**
+ * Extract the username or numeric ID from a Facebook profile URL so we can
+ * build a direct Messenger link: https://www.facebook.com/messages/t/{handle}
+ *
+ * Handles:
+ *   facebook.com/username            → "username"
+ *   facebook.com/profile.php?id=123  → "123"
+ *   /groups/xxx/user/123/            → "123"
+ */
+function extractFbHandle(profileUrl) {
+  try {
+    const u = new URL(profileUrl);
+    // profile.php?id=123 format
+    const idParam = u.searchParams.get('id');
+    if (idParam) return idParam;
+    // /groups/.../user/123/ format
+    const userMatch = u.pathname.match(/\/user\/(\d+)/);
+    if (userMatch) return userMatch[1];
+    // facebook.com/username format — last meaningful path segment
+    const parts = u.pathname.split('/').filter(Boolean);
+    if (parts.length >= 1) return parts[parts.length - 1];
+  } catch { /* ignore */ }
+  return null;
+}
+
+/**
+ * Switch the active Facebook identity to the page (or back to personal profile).
+ * Facebook shows a profile/page switcher in the top-nav Account menu.
+ *
+ * @param {import('playwright').Page} page
+ * @param {string} targetUrl - Page URL to switch to (or ownProfileUrl to switch back)
+ * @param {string} label - For logging ("page" or "personal")
+ * @param {object} account - Account config (for logging)
+ */
+async function switchToIdentity(page, account, targetUrl, label) {
+  logger.log(account.name, 'DM', `Switching to ${label} identity...`);
+
+  // Navigate to FB home first to ensure the nav is in a clean state
+  await page.goto('https://www.facebook.com', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await randomDelay(3000, 5000);
+
+  // Open the Account / profile switcher dropdown
+  let switcherBtn = null;
+  for (const sel of [
+    '[aria-label="Account"]',
+    '[aria-label="Your profile"]',
+    '[data-testid="blue_bar_profile_link"]',
+  ]) {
+    switcherBtn = await page.$(sel);
+    if (switcherBtn) break;
+  }
+
+  if (!switcherBtn) {
+    logger.warn(account.name, 'DM', `Could not find account switcher button for ${label} identity.`);
+    return false;
+  }
+
+  await switcherBtn.scrollIntoViewIfNeeded();
+  await randomDelay(500, 1000);
+  await switcherBtn.click({ force: true });
+  await randomDelay(2000, 3000);
+
+  // The dropdown lists profiles/pages — find the one whose link matches targetUrl
+  // We extract the path/username from targetUrl to compare loosely
+  let targetHandle = null;
+  try {
+    const u = new URL(targetUrl);
+    targetHandle = u.searchParams.get('id') || u.pathname.split('/').filter(Boolean).pop();
+  } catch { /* ignore */ }
+
+  // Look for a menuitem/button whose inner link href contains the target handle
+  const found = await page.evaluate((handle) => {
+    const items = Array.from(document.querySelectorAll('[role="menuitem"], [role="button"]'));
+    for (const item of items) {
+      const links = Array.from(item.querySelectorAll('a[href]'));
+      for (const a of links) {
+        if (handle && a.href.includes(handle)) {
+          a.click();
+          return true;
+        }
+      }
+      // Fallback: click the item itself if its own href matches
+      if (item.tagName === 'A' && handle && item.href && item.href.includes(handle)) {
+        item.click();
+        return true;
+      }
+    }
+    return false;
+  }, targetHandle);
+
+  if (!found) {
+    // Try pressing Escape to close the dropdown and warn
+    await page.keyboard.press('Escape').catch(() => {});
+    logger.warn(account.name, 'DM', `Identity "${label}" not found in switcher dropdown (handle: ${targetHandle}).`);
+    return false;
+  }
+
+  await randomDelay(3000, 5000);
+  logger.log(account.name, 'DM', `Switched to ${label} identity.`);
+  return true;
+}
+
 async function sendDmToUser(page, account, profileUrl) {
   if (config.enableDmToCommenters === false) return;
   if (!account.sendDmToCommenters) return;
@@ -924,33 +1026,59 @@ async function sendDmToUser(page, account, profileUrl) {
     return;
   }
 
+  const usingPage = !!account.dmAsPageUrl;
+
   try {
-    logger.log(account.name, 'DM', `Navigating to profile: ${cleanUrl}`);
-    await page.goto(cleanUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await randomDelay(3000, 6000);
-
-    // Find "Message" button
-    let msgBtn = null;
-    for (const sel of [
-      '[aria-label="Message"]',
-      'div[role="button"]:has-text("Message")',
-      'a[role="button"]:has-text("Message")',
-    ]) {
-      msgBtn = await page.$(sel);
-      if (msgBtn) break;
+    // ── Switch to page identity if configured ──────────────────────────────
+    if (usingPage) {
+      const switched = await switchToIdentity(page, account, account.dmAsPageUrl, 'page');
+      if (!switched) {
+        logger.warn(account.name, 'DM', 'Could not switch to page identity, aborting DM.');
+        return;
+      }
     }
 
-    if (!msgBtn) {
-      logger.warn(account.name, 'DM', `Message button not found on ${cleanUrl}`);
-      return;
+    // ── Navigate to the chat thread ────────────────────────────────────────
+    if (usingPage) {
+      // Use direct Messenger URL when sending as page (avoids "Message" button
+      // which may not appear on profiles when viewed as a page)
+      const handle = extractFbHandle(cleanUrl);
+      if (!handle) {
+        logger.warn(account.name, 'DM', `Could not extract FB handle from ${cleanUrl}`);
+        return;
+      }
+      const messengerUrl = `https://www.facebook.com/messages/t/${handle}`;
+      logger.log(account.name, 'DM', `Opening Messenger thread: ${messengerUrl}`);
+      await page.goto(messengerUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await randomDelay(4000, 7000);
+    } else {
+      logger.log(account.name, 'DM', `Navigating to profile: ${cleanUrl}`);
+      await page.goto(cleanUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await randomDelay(3000, 6000);
+
+      // Find "Message" button (personal profile flow)
+      let msgBtn = null;
+      for (const sel of [
+        '[aria-label="Message"]',
+        'div[role="button"]:has-text("Message")',
+        'a[role="button"]:has-text("Message")',
+      ]) {
+        msgBtn = await page.$(sel);
+        if (msgBtn) break;
+      }
+
+      if (!msgBtn) {
+        logger.warn(account.name, 'DM', `Message button not found on ${cleanUrl}`);
+        return;
+      }
+
+      await msgBtn.scrollIntoViewIfNeeded();
+      await randomDelay(800, 1500);
+      await msgBtn.click({ force: true });
+      await randomDelay(3000, 5000);
     }
 
-    await msgBtn.scrollIntoViewIfNeeded();
-    await randomDelay(800, 1500);
-    await msgBtn.click({ force: true });
-    await randomDelay(3000, 5000);
-
-    // Find chat input
+    // ── Find chat input and send message ──────────────────────────────────
     let chatBox = null;
     for (const sel of [
       'div[role="combobox"][contenteditable="true"]',
@@ -981,9 +1109,16 @@ async function sendDmToUser(page, account, profileUrl) {
 
     dmSent.add(cleanUrl);
     writeDmSent(account, dmSent);
-    logger.log(account.name, 'DM', `✓ DM sent to: ${cleanUrl}`);
+    logger.log(account.name, 'DM', `✓ DM sent to: ${cleanUrl}${usingPage ? ' (as page)' : ''}`);
   } catch (err) {
     logger.warn(account.name, 'DM', `DM failed for ${cleanUrl}: ${err.message}`);
+  } finally {
+    // ── Switch back to personal identity if we switched to a page ─────────
+    if (usingPage && account.ownProfileUrl) {
+      await switchToIdentity(page, account, account.ownProfileUrl, 'personal').catch((e) =>
+        logger.warn(account.name, 'DM', `Failed to switch back to personal: ${e.message}`)
+      );
+    }
   }
 }
 
@@ -1104,16 +1239,40 @@ async function monitorAndReplyToComments(page, account) {
           let commenterProfileUrl = null;
           try {
             commenterProfileUrl = await article.evaluate((el) => {
-              for (const a of el.querySelectorAll('a[href*="facebook.com"]')) {
+              const links = Array.from(el.querySelectorAll('a[href*="facebook.com"]'));
+              for (const a of links) {
                 const href = a.href || '';
+                // Skip comment permalinks, page links, and group home/post links
                 if (href.includes('comment_id=')) continue;
-                if (href.includes('/groups/') || href.includes('/pages/')) continue;
-                if (href.includes('profile.php') || /facebook\.com\/[^/?#]+\/?$/.test(href)) return href;
+                if (href.includes('/pages/')) continue;
+                
+                // In group contexts, user links often look like /groups/id/user/profile_id/
+                if (href.includes('/user/')) return href;
+                
+                // Regular profile link with ID
+                if (href.includes('profile.php?id=')) return href;
+                
+                // Direct profile link: facebook.com/username (no extra path segments)
+                try {
+                  const urlObj = new URL(href);
+                  const pathParts = urlObj.pathname.split('/').filter(Boolean);
+                  // If it's just facebook.com/username, pathParts.length is 1
+                  if (pathParts.length === 1 && !['groups', 'pages', 'events', 'marketplace', 'groups_home'].includes(pathParts[0])) {
+                    return href;
+                  }
+                } catch(e) {}
               }
               return null;
             });
-            if (commenterProfileUrl) commenterProfileUrl = cleanFbUrl(commenterProfileUrl);
-          } catch { /* ignore */ }
+            if (commenterProfileUrl) {
+              commenterProfileUrl = cleanFbUrl(commenterProfileUrl);
+              logger.log(account.name, 'COMMENTS', `Found profile URL for ${commenterName || 'commenter'}: ${commenterProfileUrl}`);
+            } else {
+              logger.warn(account.name, 'COMMENTS', `Could not find profile URL for ${commenterName || 'commenter'}. Checked all links in article.`);
+            }
+          } catch (err) {
+            logger.warn(account.name, 'COMMENTS', `Error extracting profile URL: ${err.message}`);
+          }
 
           // Like the comment
           try {

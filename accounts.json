@@ -1,8 +1,8 @@
 [
   {
     "name": "account1",
-    "email": "asmaaabaaldahab@outlook.com",
-    "password": "Asmaa@aba1",
+    "email": "ranaabaaldahab@outlook.com",
+    "password": "Rana@aba1",
     "sessionFile": "sessions/account1.json",
     "lastPostFile": "state/account1_last_post.txt",
     "targetPageUrl": "https://www.facebook.com/profile.php?id=100079679291285",
@@ -16,7 +16,7 @@
       "password": "PROXY_PASS_1"
     },
     "groups": [
-      "https://www.facebook.com/groups/2391725291331198"
+      "https://www.facebook.com/groups/2172725266860380"
     ],
     "comments": [
       "Great post! Thanks for sharing 🙌",
@@ -25,7 +25,7 @@
       "This is exactly what I needed to see today.",
       "Awesome post as always 🔥"
     ],
-    "ownProfileUrl": "https://www.facebook.com/profile.php?id=61583631420544",
+    "ownProfileUrl": "https://www.facebook.com/profile.php?id=61583463887816",
     "replies": [
       "Thank you! 🙏",
       "Glad you found it useful!",
@@ -34,6 +34,7 @@
       "So happy you liked it!"
     ],
     "sendDmToCommenters": true,
+    "dmAsPageUrl": "https://www.facebook.com/profile.php?id=61578492879688",
     "dmMessages": [
       "Hey! Thanks for your comment, really appreciate it 😊",
       "Hi! Saw your comment — feel free to reach out anytime!",

@@ -19,5 +19,5 @@
   "visionModel": "gpt-4o-mini",
   "visionMaxSteps": 8,
 
-  "enableDmToCommenters": true
+  "enableDmToCommenters": false
 }

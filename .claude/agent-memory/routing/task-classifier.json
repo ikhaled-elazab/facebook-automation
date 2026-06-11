@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "description": "Task classifier dispatch matrix — maps task types to execution mode, default agents, validators, and constraints. Consulted by main thread before dispatching. Override when specific task warrants it.",
+  "task_classes": {
+    "simple_code_fix": {
+      "mode": "FAST",
+      "description": "Single bug fix, typo, one-file change",
+      "default_agents": ["elite-engineer"],
+      "validators": ["test-engineer"],
+      "cto_required": false,
+      "challenger_required": false,
+      "max_dispatches": 2
+    },
+    "code_review": {
+      "mode": "FAST",
+      "description": "Review code in one language/service",
+      "default_agents": ["go-expert", "python-expert", "typescript-expert"],
+      "validators": ["evidence-validator"],
+      "cto_required": false,
+      "challenger_required": false,
+      "max_dispatches": 3,
+      "notes": "Select the language-specific expert based on the code being reviewed"
+    },
+    "feature_implementation": {
+      "mode": "BALANCED",
+      "description": "New feature, multi-file implementation",
+      "default_agents": ["elite-engineer"],
+      "validators": ["test-engineer", "deep-qa"],
+      "reviewers": ["go-expert", "python-expert", "typescript-expert"],
+      "cto_required": false,
+      "challenger_required": false,
+      "max_dispatches": 5,
+      "notes": "Add language expert review after implementation"
+    },
+    "security_review": {
+      "mode": "BALANCED",
+      "description": "Security assessment, vulnerability review",
+      "default_agents": ["deep-reviewer"],
+      "validators": ["evidence-validator"],
+      "cto_required": false,
+      "challenger_required": true,
+      "max_dispatches": 4
+    },
+    "architecture_decision": {
+      "mode": "FULL_POWER",
+      "description": "Strategic technical decision, architecture change",
+      "default_agents": ["cto", "deep-planner"],
+      "validators": ["evidence-validator", "challenger"],
+      "cto_required": true,
+      "challenger_required": true,
+      "max_dispatches": 8
+    },
+    "production_incident": {
+      "mode": "FULL_POWER",
+      "description": "Production outage, service degradation, emergency",
+      "default_agents": ["cto", "infra-expert", "observability-expert", "deep-reviewer"],
+      "validators": ["evidence-validator"],
+      "cto_required": true,
+      "challenger_required": true,
+      "max_dispatches": 10,
+      "notes": "Skip session-sentinel pre-brief in emergency mode"
+    },
+    "infrastructure_change": {
+      "mode": "BALANCED",
+      "description": "K8s manifests, Terraform, deployment config",
+      "default_agents": ["infra-expert", "elite-engineer"],
+      "validators": ["deep-reviewer"],
+      "cto_required": false,
+      "challenger_required": false,
+      "max_dispatches": 4
+    },
+    "database_migration": {
+      "mode": "BALANCED",
+      "description": "Schema change, migration, query optimization",
+      "default_agents": ["database-expert", "elite-engineer"],
+      "validators": ["test-engineer"],
+      "cto_required": false,
+      "challenger_required": false,
+      "max_dispatches": 4
+    },
+    "test_strategy": {
+      "mode": "BALANCED",
+      "description": "Test design, coverage improvement, flaky test fix",
+      "default_agents": ["test-engineer"],
+      "validators": ["deep-qa"],
+      "cto_required": false,
+      "challenger_required": false,
+      "max_dispatches": 3
+    },
+    "frontend_build": {
+      "mode": "BALANCED",
+      "description": "Frontend component, UI feature, streaming interface",
+      "default_agents": ["frontend-platform-engineer"],
+      "validators": ["typescript-expert"],
+      "cto_required": false,
+      "challenger_required": false,
+      "max_dispatches": 4
+    },
+    "full_audit": {
+      "mode": "FULL_POWER",
+      "description": "Comprehensive quality + security review",
+      "default_agents": ["deep-qa", "deep-reviewer"],
+      "validators": ["evidence-validator", "challenger"],
+      "cto_required": false,
+      "challenger_required": true,
+      "max_dispatches": 8,
+      "notes": "Dispatch deep-qa and deep-reviewer in parallel"
+    },
+    "team_evolution": {
+      "mode": "BALANCED",
+      "description": "Agent prompt improvement, team meta-work",
+      "default_agents": ["meta-agent"],
+      "validators": ["session-sentinel"],
+      "cto_required": false,
+      "challenger_required": false,
+      "max_dispatches": 3
+    },
+    "agent_hiring": {
+      "mode": "FULL_POWER",
+      "description": "Detect gap + hire new specialist agent",
+      "default_agents": ["talent-scout", "recruiter"],
+      "validators": ["challenger", "session-sentinel"],
+      "cto_required": false,
+      "challenger_required": true,
+      "max_dispatches": 6,
+      "notes": "talent-scout identifies gap → recruiter executes 8-phase pipeline"
+    }
+  }
+}
