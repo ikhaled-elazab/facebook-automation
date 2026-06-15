@@ -17,19 +17,23 @@
 /**
  * Public, safe account fields. Note: SQLite stores booleans as 0/1 integers;
  * we coerce the known boolean columns to real booleans for a clean API.
+ *
+ * Phase 2 RE-KEY: the per-target monitoring fields (target_page_url,
+ * own_profile_url, dm_as_page_url, send_dm_to_commenters, check_interval_minutes)
+ * MOVED to branches and are gone from this allowlist. The account now exposes
+ * login/identity/fingerprint/proxy + the per-account cap CEILING. The content
+ * arrays (comments/replies/dm_messages/groups) likewise moved to the branch
+ * serializer below. Allowlisting fails closed: a dropped column simply stops
+ * appearing, never leaks.
  */
 const ACCOUNT_PUBLIC_FIELDS = Object.freeze([
   'id',
   'name',
   'email',
   'session_file',
-  'target_page_url',
-  'own_profile_url',
-  'dm_as_page_url',
   'user_agent',
   'locale',
   'timezone_id',
-  'check_interval_minutes',
   'proxy_server',
   'proxy_username',
   'daily_action_cap',
@@ -37,7 +41,7 @@ const ACCOUNT_PUBLIC_FIELDS = Object.freeze([
   'updated_at',
 ]);
 
-const ACCOUNT_BOOLEAN_FIELDS = Object.freeze(['send_dm_to_commenters', 'enabled']);
+const ACCOUNT_BOOLEAN_FIELDS = Object.freeze(['enabled']);
 
 /**
  * Serialize a raw accounts row to the safe client shape.
@@ -59,14 +63,59 @@ function serializeAccount(row) {
   return out;
 }
 
+// ── Branches (Phase 2 — the MONITORING UNIT) ──────────────────────────────────
+//
+// Same allowlist discipline as accounts (fail closed). A branch holds NO secrets,
+// but we STILL project an explicit field subset so a future branches column never
+// silently appears in the API. `account_id` is exposed (read-only) so the client
+// can group branches under their account; `is_default` is exposed (read-only) so
+// the UI can mark/guard the default branch — but neither is writable (see
+// schemas.js: account_id is set via the create URL, is_default via setDefaultBranch).
+const BRANCH_PUBLIC_FIELDS = Object.freeze([
+  'id',
+  'account_id',
+  'name',
+  'target_page_url',
+  'own_profile_url',
+  'dm_as_page_url',
+  'check_interval_minutes',
+  'daily_action_cap',
+  'created_at',
+  'updated_at',
+]);
+
+const BRANCH_BOOLEAN_FIELDS = Object.freeze([
+  'is_default',
+  'send_dm_to_commenters',
+  'enabled',
+]);
+
 /**
- * Serialize an account together with its child collections.
+ * Serialize a raw branches row to the safe client shape (allowlist projection;
+ * boolean 0/1 columns coerced to real booleans).
+ * @param {Record<string, unknown>|undefined|null} row
+ * @returns {Record<string, unknown>|null}
+ */
+function serializeBranch(row) {
+  if (!row) return null;
+  const out = {};
+  for (const field of BRANCH_PUBLIC_FIELDS) {
+    out[field] = row[field] === undefined ? null : row[field];
+  }
+  for (const field of BRANCH_BOOLEAN_FIELDS) {
+    out[field] = !!row[field];
+  }
+  return out;
+}
+
+/**
+ * Serialize a branch together with its content collections.
  * @param {Record<string, unknown>} row
  * @param {{comments:string[], replies:string[], dm_messages:string[], groups:string[]}} children
- * @returns {Record<string, unknown>}
+ * @returns {Record<string, unknown>|null}
  */
-function serializeAccountWithChildren(row, children) {
-  const base = serializeAccount(row);
+function serializeBranchWithChildren(row, children) {
+  const base = serializeBranch(row);
   if (!base) return base;
   return {
     ...base,
@@ -143,8 +192,10 @@ function serializeSettings(row) {
 
 module.exports = {
   serializeAccount,
-  serializeAccountWithChildren,
+  serializeBranch,
+  serializeBranchWithChildren,
   serializeSettings,
   ACCOUNT_PUBLIC_FIELDS,
+  BRANCH_PUBLIC_FIELDS,
   SETTINGS_PUBLIC_FIELDS,
 };

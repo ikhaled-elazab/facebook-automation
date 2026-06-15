@@ -113,7 +113,8 @@ async function probe(page) {
  * never throws, never alters the caller's control flow.
  *
  * @param {import('playwright').Page|null|undefined} page the live page
- * @param {object} account hydrated account (uses .id, .name)
+ * @param {object} account hydrated branch (Phase 2: `.id` is the branch id, used
+ *   as the action_log branch scope; `.name` is the account login name for logs)
  * @param {string} actionName the action that was failing (for the log detail)
  * @param {object} [deps] injectable deps for testing
  * @param {Function} [deps.logAction] (entry) => void (defaults to db.logAction)
@@ -140,7 +141,7 @@ async function detectBanSignal(page, account, actionName, deps = {}) {
 
     try {
       logAction({
-        accountId: account && account.id !== undefined ? account.id : null,
+        branchId: account && account.id !== undefined ? account.id : null,
         actionType: 'monitor',
         targetUrl: url,
         status: 'blocked',

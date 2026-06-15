@@ -23,11 +23,19 @@ const db = require('../db');
 
 let acctA;
 let acctB;
+let branchA;
+let branchB;
 
 before(() => {
   db.getDb();
-  acctA = db.insertAccount({ name: 'retA', email: 'a@x.com', session_file: 's', target_page_url: 'u' });
-  acctB = db.insertAccount({ name: 'retB', email: 'b@x.com', session_file: 's2', target_page_url: 'u2' });
+  // v2: an account is the login envelope; per-target fields moved to branches.
+  // countActionsToday is the per-account ceiling tier (keyed by account_id), so the
+  // cap tests below use the account ids. account_status is now per-BRANCH (keyed by
+  // branch_id), so the status tests use a default branch per account.
+  acctA = db.insertAccount({ name: 'retA', email: 'a@x.com', session_file: 's' });
+  acctB = db.insertAccount({ name: 'retB', email: 'b@x.com', session_file: 's2' });
+  branchA = db.insertBranch({ account_id: acctA, name: 'default', is_default: 1, target_page_url: 'u' });
+  branchB = db.insertBranch({ account_id: acctB, name: 'default', is_default: 1, target_page_url: 'u2' });
 });
 
 after(() => {
@@ -118,43 +126,49 @@ test('trimActionLog coerces a non-positive/NaN day-count to 30 (never deletes ev
   assert.strictEqual(after, before, 'no rows deleted by the guarded bad inputs');
 });
 
-// ── account_status: per-account isolation (heartbeat last-writer-wins fix) ────
+// ── account_status: per-BRANCH isolation (heartbeat last-writer-wins fix) ──────
+// v2: account_status is keyed by branch_id (one row per branch), the per-branch
+// observability fix for the single global worker_state row. The accessors are
+// setBranchStatus/getBranchStatus/listBranchStatuses.
 
-test('account_status: one account error is NOT clobbered by another running', () => {
-  db.setAccountStatus(acctA, 'running', 'A cycle started');
-  db.setAccountStatus(acctB, 'error', 'B boom'); // B fails
-  db.setAccountStatus(acctA, 'ok', 'A cycle ok'); // A succeeds AFTER B failed
+test('account_status: one branch error is NOT clobbered by another running', () => {
+  db.setBranchStatus(branchA, 'running', 'A cycle started');
+  db.setBranchStatus(branchB, 'error', 'B boom'); // B fails
+  db.setBranchStatus(branchA, 'ok', 'A cycle ok'); // A succeeds AFTER B failed
 
-  const a = db.getAccountStatus(acctA);
-  const b = db.getAccountStatus(acctB);
+  const a = db.getBranchStatus(branchA);
+  const b = db.getBranchStatus(branchB);
   assert.strictEqual(a.status, 'ok', 'A reflects its own latest status');
   assert.strictEqual(b.status, 'error', "B's error survives A's later running/ok — NOT clobbered");
   assert.strictEqual(b.detail, 'B boom');
 });
 
 test('account_status: last_cycle_at bumps only on terminal (ok|error), not on running', () => {
-  const freshId = db.insertAccount({ name: 'retC', email: 'c@x.com', session_file: 's3', target_page_url: 'u3' });
-  db.setAccountStatus(freshId, 'running', 'started');
-  assert.strictEqual(db.getAccountStatus(freshId).last_cycle_at, null, 'running does not set last_cycle_at');
-  db.setAccountStatus(freshId, 'ok', 'done');
-  const afterOk = db.getAccountStatus(freshId).last_cycle_at;
+  const freshAcct = db.insertAccount({ name: 'retC', email: 'c@x.com', session_file: 's3' });
+  const freshBranch = db.insertBranch({ account_id: freshAcct, name: 'default', is_default: 1, target_page_url: 'u3' });
+  db.setBranchStatus(freshBranch, 'running', 'started');
+  assert.strictEqual(db.getBranchStatus(freshBranch).last_cycle_at, null, 'running does not set last_cycle_at');
+  db.setBranchStatus(freshBranch, 'ok', 'done');
+  const afterOk = db.getBranchStatus(freshBranch).last_cycle_at;
   assert.ok(afterOk, 'ok sets last_cycle_at');
-  db.setAccountStatus(freshId, 'running', 'next started');
-  assert.strictEqual(db.getAccountStatus(freshId).last_cycle_at, afterOk, 'running preserves prior last_cycle_at');
+  db.setBranchStatus(freshBranch, 'running', 'next started');
+  assert.strictEqual(db.getBranchStatus(freshBranch).last_cycle_at, afterOk, 'running preserves prior last_cycle_at');
 });
 
-test('listAccountStatuses returns one row per account that has run', () => {
-  const rows = db.listAccountStatuses();
-  const ids = rows.map((r) => r.account_id);
-  assert.ok(ids.includes(acctA) && ids.includes(acctB), 'both run accounts present');
+test('listBranchStatuses returns one row per branch that has run', () => {
+  const rows = db.listBranchStatuses();
+  const ids = rows.map((r) => r.branch_id);
+  assert.ok(ids.includes(branchA) && ids.includes(branchB), 'both run branches present');
 });
 
-test('account_status cascades on account delete', () => {
-  const tmpId = db.insertAccount({ name: 'retDel', email: 'd@x.com', session_file: 's4', target_page_url: 'u4' });
-  db.setAccountStatus(tmpId, 'ok', 'x');
-  assert.ok(db.getAccountStatus(tmpId), 'status row exists');
-  db.getDb().prepare('DELETE FROM accounts WHERE id = ?').run(tmpId);
-  assert.strictEqual(db.getAccountStatus(tmpId), undefined, 'status row cascade-deleted with the account');
+test('account_status cascades on branch (and account) delete', () => {
+  const tmpAcct = db.insertAccount({ name: 'retDel', email: 'd@x.com', session_file: 's4' });
+  const tmpBranch = db.insertBranch({ account_id: tmpAcct, name: 'default', is_default: 1, target_page_url: 'u4' });
+  db.setBranchStatus(tmpBranch, 'ok', 'x');
+  assert.ok(db.getBranchStatus(tmpBranch), 'status row exists');
+  // Deleting the account cascades to branches, which cascades to account_status.
+  db.getDb().prepare('DELETE FROM accounts WHERE id = ?').run(tmpAcct);
+  assert.strictEqual(db.getBranchStatus(tmpBranch), undefined, 'status row cascade-deleted with the branch');
 });
 
 // ── index.js retention primitives (require.main guard lets us import safely) ───

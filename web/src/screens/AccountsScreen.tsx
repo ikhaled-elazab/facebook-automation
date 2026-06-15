@@ -1,17 +1,26 @@
 /*
- * AccountsScreen.tsx — account list + delete.
+ * AccountsScreen.tsx — account list + delete + per-account login (v2 multi-branch).
  *
- *   GET    /api/accounts        → table (name, email, has_password, target,
- *                                 sendDmToCommenters, enabled status)
+ *   GET    /api/accounts        → table (name, email, has_password, branch count,
+ *                                 enabled status, live login state)
  *   DELETE /api/accounts/:id    → with an explicit confirm dialog
  *
  * Secrets are never shown — only the has_password boolean drives a "set/not set"
- * badge. Create + Edit route into the AccountEditorScreen.
+ * badge. Targeting now lives in branches, so the row shows a branch-count badge
+ * (from account.branch_count) instead of a single target URL. Create + Edit route
+ * into the AccountEditorScreen.
+ *
+ * Per-account login (Model A): each row carries a Login control that launches a
+ * headless Facebook login using the account's stored (encrypted) password, polls
+ * its status, and — when Facebook challenges — reveals a 2FA code input the
+ * operator fills in to resume the flow. Login is ACCOUNT-level (one envelope = one
+ * session), not per-branch. See <LoginCell>.
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAsync } from '../lib/useAsync';
+import { useAccountLogin } from '../lib/useAccountLogin';
 import { errorMessage } from '../lib/format';
 import { useToast } from '../components/Toast';
 import {
@@ -23,11 +32,23 @@ import {
   LoadingState,
   Badge,
   Button,
-  SafeUrl,
+  Field,
+  TextInput,
 } from '../components/ui';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { IconAccounts, IconPlus, IconEdit, IconTrash, IconLock } from '../components/icons';
-import type { Account } from '../api/types';
+import {
+  IconAccounts,
+  IconPlus,
+  IconEdit,
+  IconTrash,
+  IconLock,
+  IconInbox,
+  IconPlay,
+  IconRefresh,
+  IconCheck,
+  IconAlert,
+} from '../components/icons';
+import type { Account, LoginStatus } from '../api/types';
 
 export function AccountsScreen() {
   const navigate = useNavigate();
@@ -90,10 +111,10 @@ export function AccountsScreen() {
                   <tr>
                     <th>Name</th>
                     <th>Email</th>
-                    <th>Target page</th>
+                    <th>Branches</th>
                     <th>Credential</th>
-                    <th>DM commenters</th>
                     <th>Status</th>
+                    <th>Login</th>
                     <th aria-label="Actions" />
                   </tr>
                 </thead>
@@ -105,11 +126,10 @@ export function AccountsScreen() {
                       </td>
                       <td className="mono truncate">{acct.email}</td>
                       <td>
-                        <SafeUrl
-                          className="mono truncate"
-                          url={acct.target_page_url}
-                          text={shortUrl(acct.target_page_url)}
-                        />
+                        <Badge tone={acct.branch_count > 0 ? 'accent' : 'warn'}>
+                          <IconInbox size={11} />{' '}
+                          {acct.branch_count} {acct.branch_count === 1 ? 'branch' : 'branches'}
+                        </Badge>
                       </td>
                       <td>
                         {acct.has_password ? (
@@ -121,15 +141,6 @@ export function AccountsScreen() {
                         )}
                       </td>
                       <td>
-                        {acct.send_dm_to_commenters ? (
-                          <Badge tone="accent" dot>
-                            On
-                          </Badge>
-                        ) : (
-                          <Badge tone="info">Off</Badge>
-                        )}
-                      </td>
-                      <td>
                         {acct.enabled ? (
                           <Badge tone="ok" dot>
                             Enabled
@@ -137,6 +148,9 @@ export function AccountsScreen() {
                         ) : (
                           <Badge tone="info">Disabled</Badge>
                         )}
+                      </td>
+                      <td>
+                        <LoginCell account={acct} />
                       </td>
                       <td>
                         <div className="table__actions">
@@ -189,13 +203,136 @@ export function AccountsScreen() {
   );
 }
 
-/** Compact a URL for table display (host + trimmed path). */
-function shortUrl(url: string): string {
-  try {
-    const u = new URL(url);
-    const path = u.pathname.length > 24 ? u.pathname.slice(0, 24) + '…' : u.pathname;
-    return u.host + (path === '/' ? '' : path) + (u.search ? '?…' : '');
-  } catch {
-    return url;
+// ── Per-account login control ─────────────────────────────────────────────────
+//
+// Owns ONE login flow for ONE account: launch → poll → (optional 2FA) → terminal.
+// The poller + state live in useAccountLogin; this component renders the status,
+// the Login/Retry button, and the 2FA relay input when the flow parks at
+// needs_2fa. Each row mounts its own LoginCell, so unmounting (e.g. on delete or
+// navigation) tears down that account's poller cleanly.
+
+const LOGIN_BADGE: Record<LoginStatus, { tone: 'ok' | 'warn' | 'danger' | 'info' | 'accent'; label: string }> = {
+  idle: { tone: 'info', label: 'Not logged in' },
+  running: { tone: 'accent', label: 'Logging in…' },
+  needs_2fa: { tone: 'warn', label: 'Needs 2FA code' },
+  ok: { tone: 'ok', label: 'Logged in' },
+  failed: { tone: 'danger', label: 'Login failed' },
+};
+
+function LoginCell({ account }: { account: Account }) {
+  const login = useAccountLogin(account.id);
+  const { status, detail, launching, error } = login;
+
+  const badge = LOGIN_BADGE[status];
+  // Launch is blocked while a flow is active or in flight, or when there is no
+  // stored credential to log in with (Model A requires a saved password).
+  const active = status === 'running' || status === 'needs_2fa';
+  const canLaunch = !active && !launching && account.has_password;
+  const isRetry = status === 'failed';
+
+  return (
+    <div className="login-cell">
+      <div className="login-cell__row">
+        <Badge tone={badge.tone} dot={status === 'running'}>
+          {status === 'ok' && <IconCheck size={11} />}
+          {status === 'failed' && <IconAlert size={11} />}
+          {badge.label}
+        </Badge>
+
+        {!account.has_password ? (
+          <span className="login-cell__hint">
+            <IconLock size={12} /> Set a password to enable login
+          </span>
+        ) : (
+          <Button
+            variant={isRetry ? 'secondary' : 'primary'}
+            size="sm"
+            type="button"
+            loading={launching}
+            disabled={!canLaunch}
+            onClick={() => void login.launch()}
+            aria-label={isRetry ? `Retry login for ${account.name}` : `Log in ${account.name}`}
+          >
+            {isRetry ? <IconRefresh size={14} /> : <IconPlay size={14} />}
+            {isRetry ? 'Retry' : active ? 'Logging in…' : 'Login'}
+          </Button>
+        )}
+      </div>
+
+      {/* Mid-flow 2FA relay — revealed only when the server parks at needs_2fa. */}
+      {status === 'needs_2fa' && <TwoFactorRelay login={login} accountName={account.name} />}
+
+      {/* A failure reason or a server prompt (e.g. "check your phone"). */}
+      {detail && (status === 'failed' || status === 'needs_2fa') && (
+        <p className={`login-cell__detail${status === 'failed' ? ' login-cell__detail--error' : ''}`}>
+          {detail}
+        </p>
+      )}
+
+      {/* Transient transport / 409 error, distinct from the flow status. */}
+      {error && (
+        <p className="login-cell__detail login-cell__detail--error" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── 2FA relay input ───────────────────────────────────────────────────────────
+//
+// Numeric code entry shown while the login is parked at needs_2fa. The typed code
+// is transient (component state only), preserved across a failed submit so the
+// operator can correct a typo, and cleared once submitted successfully (the flow
+// leaves needs_2fa). SECURITY: never logged, never persisted.
+
+function TwoFactorRelay({
+  login,
+  accountName,
+}: {
+  login: ReturnType<typeof useAccountLogin>;
+  accountName: string;
+}) {
+  const [code, setCode] = useState('');
+  const inputId = useId();
+  const { submitting2fa } = login;
+  // Mirror common authenticator/SMS code lengths; the server is authoritative.
+  const trimmed = code.trim();
+  const valid = /^\d{4,8}$/.test(trimmed);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting2fa || !valid) return;
+    await login.submit2fa(trimmed);
+    // On success the flow leaves needs_2fa and this component unmounts; if it
+    // failed, keep the code so the operator can correct it (do NOT clear here).
   }
+
+  return (
+    <form className="login-cell__twofa" onSubmit={onSubmit} noValidate>
+      <Field label={`2FA code for ${accountName}`} htmlFor={inputId} hint="Enter the code from SMS or your authenticator app.">
+        <div className="row row-2">
+          <TextInput
+            id={inputId}
+            grow
+            mono
+            value={code}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="\d*"
+            maxLength={8}
+            placeholder="123456"
+            onChange={(e) => {
+              // Keep digits only; strip spaces/dashes the operator might paste.
+              setCode(e.target.value.replace(/[^\d]/g, ''));
+              if (login.error) login.clearError();
+            }}
+          />
+          <Button variant="primary" size="sm" type="submit" loading={submitting2fa} disabled={!valid}>
+            Submit code
+          </Button>
+        </div>
+      </Field>
+    </form>
+  );
 }

@@ -1,21 +1,30 @@
 'use strict';
 
 /**
- * server/routes/accounts.js — account CRUD + child collections.
+ * server/routes/accounts.js — account CRUD (the LOGIN ENVELOPE).
  *
  *   GET    /api/accounts            -> list (safe projection, no secrets)
- *   GET    /api/accounts/:id        -> get one + children
- *   POST   /api/accounts            -> create (encrypt secrets, set children)
- *   PATCH  /api/accounts/:id        -> partial update (encrypt secrets, set children)
- *   DELETE /api/accounts/:id        -> delete (children cascade in DB)
+ *   GET    /api/accounts/:id        -> get one
+ *   POST   /api/accounts            -> create (encrypt secrets)
+ *   PATCH  /api/accounts/:id        -> partial update (encrypt secrets)
+ *   DELETE /api/accounts/:id        -> delete (branches + children + state + log
+ *                                      cascade in the DB via ON DELETE CASCADE)
+ *
+ * PHASE 2 RE-KEY: an account is now ONLY the login envelope — credentials,
+ * session file, browser fingerprint, proxy, and the per-account daily-cap
+ * CEILING. The monitoring target + content arrays MOVED to branches (1 account :
+ * N branches). Branch CRUD lives in routes/branches.js. Accordingly this router
+ * no longer reads/writes child collections or the per-target columns; a stale
+ * client that still sends them hits the account schema's `.strict()` → 422 (a
+ * loud, correct failure, not a 500 against a dropped column).
  *
  * SECURITY:
  *   - All routes are behind requireAuth (wired in app.js) + CSRF on mutations.
  *   - FB password + proxy password arrive as plaintext, are encrypted via
  *     crypto.encrypt() into *_enc columns HERE, and are NEVER returned.
  *   - Responses go through serializers (allowlist projection).
- *   - A validated patch is split into {columns, secrets, children} using the
- *     fixed key-sets from schemas.js — no raw object is ever forwarded to db.js.
+ *   - A validated patch is split into {columns, secrets} using the fixed key-sets
+ *     from schemas.js — no raw object is ever forwarded to db.js.
  */
 
 const express = require('express');
@@ -27,51 +36,42 @@ const {
   updateAccountSchema,
   idParamSchema,
   ACCOUNT_COLUMN_KEYS,
-  ACCOUNT_CHILD_KEYS,
 } = require('../schemas');
-const { serializeAccount, serializeAccountWithChildren } = require('../serializers');
+const { serializeAccount } = require('../serializers');
 const { NotFoundError, ConflictError } = require('../errors');
 
 /**
- * Split a validated payload into the three destination streams.
+ * Attach branch_count to a serialized account. CONTRACT: types.ts declares
+ * Account.branch_count as REQUIRED, so EVERY account response (list, get-one,
+ * create, update) must carry it — never undefined. An account is the login
+ * envelope; branch_count tells the UI how many monitoring units hang off it
+ * (AccountsScreen renders it as a badge). The count is derived, not a column.
+ * @param {Record<string, unknown>} serialized result of serializeAccount(row)
+ * @param {number} count number of branches owned by this account
+ * @returns {Record<string, unknown>}
+ */
+function withBranchCount(serialized, count) {
+  return { ...serialized, branch_count: count };
+}
+
+/**
+ * Split a validated account payload into the two destination streams.
  * @param {Record<string, unknown>} data validated payload
- * @returns {{columns:Record<string,unknown>, secrets:Record<string,string>, children:Record<string,unknown>}}
+ * @returns {{columns:Record<string,unknown>, secrets:Record<string,string>}}
  */
 function splitPayload(data) {
   const columns = {};
-  const children = {};
   const secrets = {};
 
   for (const key of ACCOUNT_COLUMN_KEYS) {
     if (key in data) columns[key] = data[key];
-  }
-  for (const key of ACCOUNT_CHILD_KEYS) {
-    if (key in data) children[key] = data[key];
   }
   // Plaintext secrets -> encrypted *_enc columns (mapped explicitly, by name).
   if (data.password !== undefined) secrets.password_enc = encrypt(data.password);
   if (data.proxy_password !== undefined) {
     secrets.proxy_password_enc = encrypt(data.proxy_password);
   }
-  return { columns, secrets, children };
-}
-
-/** Apply child-collection updates for an account using db.js setters. */
-function applyChildren(accountId, children) {
-  if ('comments' in children) db.setAccountComments(accountId, children.comments);
-  if ('replies' in children) db.setAccountReplies(accountId, children.replies);
-  if ('dm_messages' in children) db.setAccountDmMessages(accountId, children.dm_messages);
-  if ('groups' in children) db.setAccountGroups(accountId, children.groups);
-}
-
-/** Read an account's children into a single object. */
-function readChildren(accountId) {
-  return {
-    comments: db.getAccountComments(accountId),
-    replies: db.getAccountReplies(accountId),
-    dm_messages: db.getAccountDmMessages(accountId),
-    groups: db.getAccountGroups(accountId),
-  };
+  return { columns, secrets };
 }
 
 /**
@@ -81,23 +81,28 @@ function readChildren(accountId) {
 function accountsRouter({ csrfProtection }) {
   const router = express.Router();
 
-  // List — safe projection.
+  // List — safe projection. branch_count comes from a SINGLE grouped query
+  // (db.countBranchesByAccount) so the hot path stays O(1) queries, not O(N).
   router.get(
     '/',
     asyncHandler(async (_req, res) => {
       const rows = db.listAccounts();
-      res.json({ accounts: rows.map(serializeAccount) });
+      const counts = db.countBranchesByAccount();
+      res.json({
+        accounts: rows.map((r) => withBranchCount(serializeAccount(r), counts.get(r.id) || 0)),
+      });
     })
   );
 
-  // Get one + children.
+  // Get one.
   router.get(
     '/:id',
     asyncHandler(async (req, res) => {
       const { id } = parseOrThrow(idParamSchema, req.params);
       const row = db.getAccountById(id);
       if (!row) throw new NotFoundError('Account not found');
-      res.json({ account: serializeAccountWithChildren(row, readChildren(id)) });
+      const count = db.listBranches({ accountId: id }).length;
+      res.json({ account: withBranchCount(serializeAccount(row), count) });
     })
   );
 
@@ -114,7 +119,7 @@ function accountsRouter({ csrfProtection }) {
         throw new ConflictError(`An account named "${data.name}" already exists.`);
       }
 
-      const { columns, secrets, children } = splitPayload(data);
+      const { columns, secrets } = splitPayload(data);
       const insertFields = { ...columns, ...secrets };
 
       let newId;
@@ -128,12 +133,9 @@ function accountsRouter({ csrfProtection }) {
         throw err;
       }
 
-      applyChildren(newId, children);
-
       const row = db.getAccountById(newId);
-      res
-        .status(201)
-        .json({ account: serializeAccountWithChildren(row, readChildren(newId)) });
+      const count = db.listBranches({ accountId: newId }).length;
+      res.status(201).json({ account: withBranchCount(serializeAccount(row), count) });
     })
   );
 
@@ -156,7 +158,7 @@ function accountsRouter({ csrfProtection }) {
         }
       }
 
-      const { columns, secrets, children } = splitPayload(data);
+      const { columns, secrets } = splitPayload(data);
       const updateColumns = { ...columns, ...secrets };
 
       if (Object.keys(updateColumns).length > 0) {
@@ -169,14 +171,14 @@ function accountsRouter({ csrfProtection }) {
           throw err;
         }
       }
-      applyChildren(id, children);
 
       const row = db.getAccountById(id);
-      res.json({ account: serializeAccountWithChildren(row, readChildren(id)) });
+      const count = db.listBranches({ accountId: id }).length;
+      res.json({ account: withBranchCount(serializeAccount(row), count) });
     })
   );
 
-  // Delete (children + state cascade via FK).
+  // Delete (branches + children + state + log cascade via FK ON DELETE CASCADE).
   router.delete(
     '/:id',
     csrfProtection,

@@ -181,6 +181,10 @@ test('full login flow then authed read', async () => {
 test('create account encrypts secret and never returns it', async () => {
   const c = await loginClient();
   const token = await c.csrf();
+  // v2: an account is the LOGIN ENVELOPE only. target_page_url + the content arrays
+  // moved to branches, so they are NOT part of the account create body (a stale
+  // client that still sends them gets a 422 — see the next test). The account body
+  // carries only login/identity/fingerprint/proxy + the per-account cap ceiling.
   const r = await c.req('POST', '/api/accounts', {
     csrf: token,
     body: {
@@ -188,14 +192,14 @@ test('create account encrypts secret and never returns it', async () => {
       email: 'unit@example.com',
       password: 'PlaintextSecret!',
       session_file: 'sessions/unitAcct.json',
-      target_page_url: 'https://www.facebook.com/p',
-      comments: ['hi', 'there'],
     },
   });
   assert.strictEqual(r.status, 201);
   const acct = r.body.account;
   assert.strictEqual(acct.has_password, true);
-  assert.deepStrictEqual(acct.comments, ['hi', 'there']);
+  assert.strictEqual(acct.branch_count, 0, 'a fresh account has no branches yet');
+  // The content arrays moved to branches — they must NOT appear on the account shape.
+  assert.ok(!('comments' in acct), 'comments moved to branches');
   // No secret in the serialized response, in any form.
   const serialized = JSON.stringify(r.body);
   assert.ok(!serialized.includes('PlaintextSecret'), 'plaintext must not leak');
@@ -207,6 +211,29 @@ test('create account encrypts secret and never returns it', async () => {
   assert.strictEqual(decrypt(row.password_enc), 'PlaintextSecret!');
 });
 
+test('create account REJECTS a stale moved branch field with 422 (not 500)', async () => {
+  const c = await loginClient();
+  const token = await c.csrf();
+  // A v1 client still sending target_page_url / comments must get a loud 422 from
+  // the account schema's .strict() — never a 500 against a dropped column.
+  const r = await c.req('POST', '/api/accounts', {
+    csrf: token,
+    body: {
+      name: 'staleAcct',
+      email: 'stale@example.com',
+      session_file: 's',
+      target_page_url: 'https://www.facebook.com/p',
+      comments: ['hi', 'there'],
+    },
+  });
+  assert.strictEqual(r.status, 422, 'moved branch fields are a 422, never a 500');
+  assert.strictEqual(r.body.error.code, 'VALIDATION_ERROR');
+  assert.ok(
+    r.body.error.details.some((d) => /target_page_url/i.test(d.message)),
+    'the unrecognized moved key must be reported'
+  );
+});
+
 test('validation rejects unknown keys (db.js trust boundary)', async () => {
   const c = await loginClient();
   const token = await c.csrf();
@@ -216,7 +243,6 @@ test('validation rejects unknown keys (db.js trust boundary)', async () => {
       name: 'x',
       email: 'x@e.com',
       session_file: 's',
-      target_page_url: 'https://x.com',
       injected_column: 'DROP TABLE accounts',
     },
   });
@@ -233,44 +259,43 @@ test('validation rejects bad email', async () => {
   const token = await c.csrf();
   const r = await c.req('POST', '/api/accounts', {
     csrf: token,
-    body: { name: 'y', email: 'not-email', session_file: 's', target_page_url: 'https://x.com' },
+    body: { name: 'y', email: 'not-email', session_file: 's' },
   });
   assert.strictEqual(r.status, 422);
 });
 
-test('validation rejects a non-http(s) URL scheme (stored-XSS defense)', async () => {
+test('account create rejects the moved URL fields (the XSS guard now lives on branches)', async () => {
   const c = await loginClient();
-  // A javascript: URL parses as a valid URL (zod .url() accepts it) but must be
-  // rejected by the http(s)-scheme refine — it would otherwise render into an
-  // <a href> in the UI and execute on click. Cover each URL field + the array.
-  const cases = [
-    { field: { target_page_url: 'javascript:alert(1)' }, base: { name: 'xss1', email: 'a@e.com', session_file: 's' } },
-    { field: { target_page_url: 'https://ok.com', own_profile_url: 'javascript:alert(2)' }, base: { name: 'xss2', email: 'a@e.com', session_file: 's' } },
-    { field: { target_page_url: 'https://ok.com', dm_as_page_url: 'data:text/html,<script>1</script>' }, base: { name: 'xss3', email: 'a@e.com', session_file: 's' } },
-    { field: { target_page_url: 'https://ok.com', groups: ['javascript:alert(3)'] }, base: { name: 'xss4', email: 'a@e.com', session_file: 's' } },
+  // v2: every URL field (target_page_url / own_profile_url / dm_as_page_url / groups)
+  // MOVED to branches, where the http(s)-scheme stored-XSS refine now guards them
+  // (full XSS matrix lives in branches.test.js: "branch URL fields reject non-http(s)
+  // schemes"). On the ACCOUNT surface these keys are simply unknown → the .strict()
+  // schema rejects them with a 422 before any value reaches the DB.
+  const movedFields = [
+    { target_page_url: 'javascript:alert(1)' },
+    { own_profile_url: 'javascript:alert(2)' },
+    { dm_as_page_url: 'data:text/html,<script>1</script>' },
+    { groups: ['javascript:alert(3)'] },
+    // even a CLEAN https URL on a moved field is rejected on the account surface.
+    { target_page_url: 'https://www.facebook.com/p' },
   ];
-  for (const { field, base } of cases) {
+  for (const field of movedFields) {
     const token = await c.csrf();
-    const r = await c.req('POST', '/api/accounts', { csrf: token, body: { ...base, ...field } });
-    assert.strictEqual(r.status, 422, `expected 422 for ${JSON.stringify(field)}`);
+    const r = await c.req('POST', '/api/accounts', {
+      csrf: token,
+      body: { name: `acct-${Math.random()}`, email: 'a@e.com', session_file: 's', ...field },
+    });
+    assert.strictEqual(r.status, 422, `expected 422 for moved field ${JSON.stringify(field)}`);
     assert.strictEqual(r.body.error.code, 'VALIDATION_ERROR');
   }
 
-  // Control: a clean https URL on every field is accepted (the refine is not
-  // over-broad — it rejects only dangerous schemes, not valid http(s)).
+  // Control: a clean account ENVELOPE (no moved fields) is accepted.
   const token = await c.csrf();
   const ok = await c.req('POST', '/api/accounts', {
     csrf: token,
-    body: {
-      name: 'xss-ok',
-      email: 'a@e.com',
-      session_file: 's',
-      target_page_url: 'https://www.facebook.com/p',
-      own_profile_url: 'http://example.com/me',
-      groups: ['https://www.facebook.com/groups/1'],
-    },
+    body: { name: 'envelope-ok', email: 'a@e.com', session_file: 's' },
   });
-  assert.strictEqual(ok.status, 201, 'clean https URLs must still be accepted');
+  assert.strictEqual(ok.status, 201, 'a clean account envelope must still be accepted');
 });
 
 test('duplicate account name is 409', async () => {
@@ -278,12 +303,12 @@ test('duplicate account name is 409', async () => {
   let token = await c.csrf();
   await c.req('POST', '/api/accounts', {
     csrf: token,
-    body: { name: 'dup', email: 'a@e.com', session_file: 's', target_page_url: 'https://x.com' },
+    body: { name: 'dup', email: 'a@e.com', session_file: 's' },
   });
   token = await c.csrf();
   const r = await c.req('POST', '/api/accounts', {
     csrf: token,
-    body: { name: 'dup', email: 'b@e.com', session_file: 's2', target_page_url: 'https://y.com' },
+    body: { name: 'dup', email: 'b@e.com', session_file: 's2' },
   });
   assert.strictEqual(r.status, 409);
   assert.strictEqual(r.body.error.code, 'CONFLICT');
@@ -373,7 +398,6 @@ test('oversized body is 413, not 500', async () => {
       name: 'big',
       email: 'a@e.com',
       session_file: 's',
-      target_page_url: 'https://x.com',
       user_agent: 'A'.repeat(300000),
     },
   });
@@ -455,64 +479,80 @@ test('status/events rejects an out-of-range limit (max 500)', async () => {
   assert.strictEqual(r.body.error.code, 'VALIDATION_ERROR');
 });
 
-// obs #3: GET /api/status must surface the per-account account_status masking-fix
-// (last_status/last_detail/last_cycle_at), otherwise a single failing account is
-// invisible behind the single global worker_state row.
-test('GET /api/status surfaces per-account status (account_status masking-fix)', async () => {
+// obs #3 (v2): GET /api/status must surface the per-BRANCH account_status
+// masking-fix and roll it up to the account (worst-case wins), otherwise a single
+// failing branch is invisible behind the single global worker_state row and behind
+// a healthy sibling branch.
+test('GET /api/status surfaces per-branch status + worst-case account rollup', async () => {
   const c = await loginClient();
-  const token = await c.csrf();
+  let token = await c.csrf();
 
-  // Create two accounts: one that has "run" (error) and one that never ran.
+  // An account whose default branch will "run" and fail, plus a fresh account whose
+  // branch never ran. v2: status is keyed by branch_id (db.setBranchStatus), and the
+  // account rollup takes the worst branch status so a failing branch always surfaces.
   const failing = await c.req('POST', '/api/accounts', {
     csrf: token,
-    body: {
-      name: 'status-failing',
-      email: 'f@e.com',
-      session_file: 'sf',
-      target_page_url: 'https://x.com/p',
-    },
+    body: { name: 'status-failing', email: 'f@e.com', session_file: 'sf' },
   });
   assert.strictEqual(failing.status, 201, 'failing account created');
+  token = await c.csrf();
+  const failingBranch = await c.req('POST', `/api/accounts/${failing.body.account.id}/branches`, {
+    csrf: token, body: { name: 'default', target_page_url: 'https://x.com/p' },
+  });
+  assert.strictEqual(failingBranch.status, 201, 'failing branch created');
+
+  token = await c.csrf();
   const freshAcct = await c.req('POST', '/api/accounts', {
     csrf: token,
-    body: {
-      name: 'status-fresh',
-      email: 'n@e.com',
-      session_file: 'sn',
-      target_page_url: 'https://x.com/q',
-    },
+    body: { name: 'status-fresh', email: 'n@e.com', session_file: 'sn' },
   });
   assert.strictEqual(freshAcct.status, 201, 'fresh account created');
+  token = await c.csrf();
+  const freshBranch = await c.req('POST', `/api/accounts/${freshAcct.body.account.id}/branches`, {
+    csrf: token, body: { name: 'default', target_page_url: 'https://x.com/q' },
+  });
+  assert.strictEqual(freshBranch.status, 201, 'fresh branch created');
 
-  // Write a per-account terminal status for the failing one (worker writes these).
-  // 'error' bumps last_cycle_at; the fresh account stays without an account_status row.
-  db.setAccountStatus(failing.body.account.id, 'error', 'login checkpoint');
+  // Write a per-branch terminal status for the failing branch (worker writes these).
+  // 'error' bumps last_cycle_at; the fresh branch stays without an account_status row.
+  db.setBranchStatus(failingBranch.body.branch.id, 'error', 'login checkpoint');
 
   const r = await c.req('GET', '/api/status');
   assert.strictEqual(r.status, 200);
   const byName = Object.fromEntries(r.body.accounts.map((a) => [a.name, a]));
 
-  // The account that ran surfaces its real last status + detail + cycle timestamp.
+  // The account whose branch ran rolls up to the worst branch status (error).
   const f = byName['status-failing'];
   assert.ok(f, 'failing account present in status payload');
-  assert.strictEqual(f.last_status, 'error', 'failing account surfaces last_status=error');
-  assert.strictEqual(f.last_detail, 'login checkpoint', 'failing account surfaces last_detail');
-  assert.ok(typeof f.last_cycle_at === 'string' && f.last_cycle_at.length > 0,
+  assert.strictEqual(f.last_status, 'error', 'rollup surfaces the failing branch');
+  assert.strictEqual(f.branch_count, 1);
+  // Drill into the per-branch entry for the real status + detail + cycle timestamp.
+  const fb = f.branches.find((b) => b.id === failingBranch.body.branch.id);
+  assert.ok(fb, 'failing branch present in the per-branch drill-down');
+  assert.strictEqual(fb.last_status, 'error', 'branch surfaces last_status=error');
+  assert.strictEqual(fb.last_detail, 'login checkpoint', 'branch surfaces last_detail');
+  assert.ok(typeof fb.last_cycle_at === 'string' && fb.last_cycle_at.length > 0,
     'error bumps last_cycle_at to a timestamp');
 
-  // The never-run account surfaces the safe defaults, never undefined/missing keys.
+  // The never-run branch surfaces the safe defaults, never undefined/missing keys.
   const n = byName['status-fresh'];
   assert.ok(n, 'fresh account present in status payload');
-  assert.strictEqual(n.last_status, 'idle', 'never-run account defaults to idle');
-  assert.strictEqual(n.last_detail, null, 'never-run account has null detail');
-  assert.strictEqual(n.last_cycle_at, null, 'never-run account has null last_cycle_at');
+  assert.strictEqual(n.last_status, 'idle', 'never-run account rolls up to idle');
+  const nb = n.branches[0];
+  assert.strictEqual(nb.last_status, 'idle', 'never-run branch defaults to idle');
+  assert.strictEqual(nb.last_detail, null, 'never-run branch has null detail');
+  assert.strictEqual(nb.last_cycle_at, null, 'never-run branch has null last_cycle_at');
 
-  // Allowlist discipline: every per-account entry exposes EXACTLY the intended keys
-  // (no secret/internal column leaks via a future account_status passthrough).
-  const expectedKeys = [
-    'id', 'name', 'enabled', 'actions_today', 'last_status', 'last_detail', 'last_cycle_at',
+  // Allowlist discipline: per-ACCOUNT and per-BRANCH entries each expose EXACTLY the
+  // intended keys (no secret/internal column leaks via a future passthrough).
+  const expectedAccountKeys = [
+    'id', 'name', 'enabled', 'actions_today', 'last_status', 'branch_count', 'branches',
   ].sort();
-  assert.deepStrictEqual(Object.keys(f).sort(), expectedKeys, 'per-account keys are exactly the allowlist');
+  assert.deepStrictEqual(Object.keys(f).sort(), expectedAccountKeys, 'per-account keys are exactly the allowlist');
+  const expectedBranchKeys = [
+    'id', 'name', 'is_default', 'enabled', 'actions_today', 'last_status', 'last_detail', 'last_cycle_at',
+  ].sort();
+  assert.deepStrictEqual(Object.keys(fb).sort(), expectedBranchKeys, 'per-branch keys are exactly the allowlist');
 });
 
 test('loadConfig REJECTS a non-loopback CONTROL_HOST (INFO-1)', () => {

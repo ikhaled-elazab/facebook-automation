@@ -1,26 +1,32 @@
 /**
- * login.js — Headless login for one or all accounts. Works on VPS (no display needed).
+ * login.js — DB-backed headless login for one or all accounts. Works on a VPS
+ * (no display needed). Phase 3.5: accounts + settings now come from the SQLite DB
+ * (db.js), NOT accounts.json/config.json. Credentials are stored ENCRYPTED
+ * (accounts.password_enc) and DECRYPTED at login time via crypto.decrypt().
  *
  * Usage:
  *   node login.js                        → shows account list, prompts which to login
  *   node login.js --account account1     → login specific account by name
  *   node login.js --all                  → loop through every account sequentially
  *
- * Credentials can also be passed via env vars to skip prompts:
+ * Credential FALLBACKS (used only when the DB has no stored password_enc):
  *   FB_EMAIL="x@x.com" FB_PASS="secret" node login.js --account account1
+ *   (and an interactive prompt if neither the DB nor env supply a value).
+ *
+ * SECURITY: the plaintext password is decrypted into a local, handed to the login
+ * flow for a single field-fill, and allowed to go out of scope. It is NEVER
+ * logged and NEVER written back to disk. The only on-disk artifact is the
+ * Playwright storageState session file (cookies only, no credentials).
  */
 
 'use strict';
 
-const { chromium } = require('playwright-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const readline = require('readline');
-const fs = require('fs');
-const path = require('path');
-const accounts = require('./accounts.json');
-const config = require('./config.json');
 
-chromium.use(StealthPlugin());
+const db = require('./db');
+const { decrypt } = require('./crypto');
+const { accountEnvelope } = require('./worker/loadConfig');
+const { LoginSession, LOGIN_STATES, defaultLaunchBrowser } = require('./login-flow');
 
 // ─── Terminal helpers ─────────────────────────────────────────────────────────
 
@@ -37,7 +43,10 @@ function askHidden(question) {
     // askHidden may be called when stdin is not a TTY (e.g. piped). Fall back gracefully.
     if (!stdin.isTTY) {
       let buf = '';
-      stdin.once('data', (d) => { buf = d.toString().trim(); resolve(buf); });
+      stdin.once('data', (d) => {
+        buf = d.toString().trim();
+        resolve(buf);
+      });
       return;
     }
     stdin.setRawMode(true);
@@ -45,15 +54,15 @@ function askHidden(question) {
     stdin.setEncoding('utf8');
     let input = '';
     stdin.on('data', function handler(ch) {
-      if (ch === '\n' || ch === '\r' || ch === '\u0004') {
+      if (ch === '\n' || ch === '\r' || ch === '') {
         stdin.setRawMode(false);
         stdin.pause();
         stdin.removeListener('data', handler);
         process.stdout.write('\n');
         resolve(input);
-      } else if (ch === '\u0003') {
+      } else if (ch === '') {
         process.exit();
-      } else if (ch === '\u007f') {
+      } else if (ch === '') {
         if (input.length > 0) {
           input = input.slice(0, -1);
           process.stdout.clearLine(0);
@@ -68,173 +77,112 @@ function askHidden(question) {
   });
 }
 
-// ─── Login one account ────────────────────────────────────────────────────────
+// ─── Credential resolution (DB → env → interactive) ────────────────────────────
 
-async function loginAccount(account) {
-  console.log(`\n${'─'.repeat(50)}`);
-  console.log(`[LOGIN] Account: ${account.name}`);
-
-  // Ensure session directory exists
-  const sessionDir = path.dirname(path.resolve(account.sessionFile));
-  if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
-
-  // Priority: account.json → env vars → interactive prompt
-  let email    = account.email    || process.env.FB_EMAIL || '';
-  let password = account.password || process.env.FB_PASS  || '';
-
-  if (!email)    email    = await ask(`[LOGIN:${account.name}] Facebook email / phone: `);
-  if (!password) password = await askHidden(`[LOGIN:${account.name}] Password: `);
-
-  console.log(`[LOGIN:${account.name}] Launching headless browser...`);
-
-  const browser = await chromium.launch({
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-blink-features=AutomationControlled',
-    ],
-  });
-
-  const contextOptions = {
-    userAgent: account.userAgent,
-    viewport: { width: 1366, height: 768 },
-    locale: account.locale || 'en-US',
-    timezoneId: account.timezoneId || 'America/New_York',
-  };
-
-  if (config.useProxy && account.proxy && account.proxy.server) {
-    contextOptions.proxy = {
-      server:   account.proxy.server,
-      username: account.proxy.username || undefined,
-      password: account.proxy.password || undefined,
-    };
-    console.log(`[LOGIN:${account.name}] Proxy: ${account.proxy.server}`);
-  } else if (config.useProxy) {
-    console.warn(`[LOGIN:${account.name}] useProxy=true but no proxy configured — using VPS IP.`);
-  } else {
-    console.log(`[LOGIN:${account.name}] Proxy disabled (useProxy=false in config.json).`);
-  }
-
-  const context = await browser.newContext(contextOptions);
-
-  const page = await context.newPage();
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-  });
-
-  // ── Fill login form ───────────────────────────────────────────────────────
-  console.log(`[LOGIN:${account.name}] Navigating to facebook.com/login...`);
-  await page.goto('https://www.facebook.com/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForTimeout(3000);
-
-  // Dismiss cookie / consent dialog if present (common on first visit)
-  const cookieBtnSelectors = [
-    'button[data-cookiebanner="accept_button"]',
-    'button[data-testid="cookie-policy-manage-dialog-accept-button"]',
-    '[aria-label="Allow all cookies"]',
-    'button:has-text("Allow all cookies")',
-    'button:has-text("Accept All")',
-    'button:has-text("Only allow essential cookies")',
-  ];
-  for (const sel of cookieBtnSelectors) {
-    const btn = await page.$(sel);
-    if (btn) {
-      console.log(`[LOGIN:${account.name}] Dismissing cookie dialog...`);
-      await btn.click();
-      await page.waitForTimeout(2000);
-      break;
-    }
-  }
-
-  // Wait for email field — try multiple selectors
-  const emailSelectors = ['#email', 'input[name="email"]', 'input[type="email"]'];
-  let emailField = null;
-  for (const sel of emailSelectors) {
-    emailField = await page.waitForSelector(sel, { timeout: 10000 }).catch(() => null);
-    if (emailField) break;
-  }
-
-  if (!emailField) {
-    console.error(`[LOGIN:${account.name}] Could not find email input. Current URL: ${page.url()}`);
-    await browser.close();
-    return false;
-  }
-
-  await emailField.fill(email);
-  await page.waitForTimeout(400 + Math.random() * 600);
-  await page.fill('input[name="pass"], #pass', password);
-  await page.waitForTimeout(400 + Math.random() * 800);
-
-  console.log(`[LOGIN:${account.name}] Submitting...`);
-  const loginBtn = await page.$('[name="login"], [aria-label="Log in"][role="button"]');
-  if (loginBtn) {
-    await loginBtn.click();
-  } else {
-    // Fallback: press Enter in password field
-    console.log(`[LOGIN:${account.name}] Login button not found, using Enter key...`);
-    await page.press('input[name="pass"], #pass', 'Enter');
-  }
-  await page.waitForURL(url => !url.href.includes('/login'), { timeout: 30000 }).catch(() => {});
-  await page.waitForTimeout(2000);
-
-  // ── 2FA / Checkpoint ──────────────────────────────────────────────────────
-  const url = page.url();
-  const needs2FA =
-    url.includes('checkpoint') ||
-    url.includes('two_step') ||
-    url.includes('login/device-based') ||
-    (await page.$('input[name="approvals_code"], #approvals_code')) !== null;
-
-  if (needs2FA) {
-    console.log(`[LOGIN:${account.name}] ⚠  2FA / Checkpoint detected.`);
-    const code = await ask(`[LOGIN:${account.name}] Enter 2FA / SMS code: `);
-
-    const codeInput = await page.$(
-      'input[name="approvals_code"], #approvals_code, input[autocomplete="one-time-code"]'
-    );
-    if (codeInput) {
-      await codeInput.fill(code);
-      await page.waitForTimeout(500);
-      const submitBtn = await page.$(
-        'button[type="submit"], input[type="submit"], div[role="button"]:has-text("Continue")'
+/**
+ * Resolve the plaintext password for an account, in priority order:
+ *   1. DB: decrypt(account.password_enc) — the Model A canonical path.
+ *   2. env: FB_PASS — operator override / first-time login before a password is stored.
+ *   3. interactive: hidden terminal prompt — last resort.
+ * The decrypted value is returned to the caller, used once, then released. It is
+ * NEVER logged. A decrypt failure (tampered/corrupt ciphertext, missing key) is
+ * surfaced as a clear message and falls through to the env/prompt fallbacks so a
+ * single bad row does not strand the operator.
+ * @param {object} env account envelope (carries passwordEnc)
+ * @param {boolean} interactive whether to allow a terminal prompt fallback
+ * @returns {Promise<string>} the plaintext password (may be '' if none available)
+ */
+async function resolvePassword(env, interactive) {
+  if (env.passwordEnc) {
+    try {
+      const pw = decrypt(env.passwordEnc);
+      if (pw) return pw;
+    } catch (err) {
+      // Never log the ciphertext or any secret — only the failure reason.
+      console.error(
+        `[LOGIN:${env.name}] Stored password could not be decrypted (${err.message}). ` +
+          'Falling back to FB_PASS / prompt.'
       );
-      if (submitBtn) await submitBtn.click();
-      await page.waitForTimeout(5000);
-
-      // "Save browser?" → click Not Now
-      const dontSave = await page.$('div[role="button"]:has-text("Not Now"), button:has-text("Not Now")');
-      if (dontSave) { await dontSave.click(); await page.waitForTimeout(2000); }
-    } else {
-      console.warn(`[LOGIN:${account.name}] Could not find code input. Waiting 60s for manual action...`);
-      await page.waitForTimeout(60000);
     }
   }
+  if (process.env.FB_PASS) return process.env.FB_PASS;
+  if (interactive) return askHidden(`[LOGIN:${env.name}] Password: `);
+  return '';
+}
 
-  // ── Verify login success ──────────────────────────────────────────────────
-  const finalUrl = page.url();
-  const ok =
-    finalUrl.includes('facebook.com') &&
-    !finalUrl.includes('/login') &&
-    !finalUrl.includes('checkpoint');
+/**
+ * Resolve the proxy plaintext password (DB only — no env/prompt fallback; the
+ * proxy password is non-interactive). Returns undefined when absent or undecryptable.
+ * @param {object} env account envelope (carries proxy.passwordEnc)
+ * @returns {string|undefined}
+ */
+function resolveProxyPassword(env) {
+  const enc = env.proxy && env.proxy.passwordEnc;
+  if (!enc) return undefined;
+  try {
+    return decrypt(enc) || undefined;
+  } catch (err) {
+    console.warn(
+      `[LOGIN:${env.name}] Proxy password decrypt failed (${err.message}) — proceeding without proxy auth.`
+    );
+    return undefined;
+  }
+}
 
-  if (!ok) {
-    console.error(`[LOGIN:${account.name}] ✗ Login failed. URL: ${finalUrl}`);
-    const screenshotPath = `debug-login-fail-${account.name}.png`;
-    await page.screenshot({ path: screenshotPath, fullPage: true });
-    console.error(`[LOGIN:${account.name}] Screenshot saved: ${screenshotPath}`);
-    await browser.close();
+// ─── Login one account (CLI path) ──────────────────────────────────────────────
+
+/**
+ * Log in one account using the DB envelope + DB settings, driving the resumable
+ * LoginSession with the terminal 2FA prompt as the CLI fallback.
+ * @param {object} acctRow a db.getAccountById/listAccounts row (snake_case)
+ * @param {object} settings db.getSettings() row
+ * @returns {Promise<boolean>} true on success
+ */
+async function loginAccount(acctRow, settings) {
+  console.log(`\n${'─'.repeat(50)}`);
+  console.log(`[LOGIN] Account: ${acctRow.name}`);
+
+  // Build the camelCase envelope (the single shared snake→camel mapping, reused
+  // from the worker's loadConfig so login + worker never drift).
+  const env = accountEnvelope(acctRow);
+
+  // Email: DB → env → prompt. Password: DB(decrypt) → env → hidden prompt.
+  let email = env.email || process.env.FB_EMAIL || '';
+  if (!email) email = await ask(`[LOGIN:${env.name}] Facebook email / phone: `);
+
+  let password = await resolvePassword(env, true);
+  if (!password) {
+    // resolvePassword already prompts when interactive, so an empty here means
+    // the operator entered nothing — fail loudly rather than submit a blank.
+    console.error(`[LOGIN:${env.name}] No password available (DB/env/prompt all empty). Aborting.`);
     return false;
   }
 
-  // ── Save session ──────────────────────────────────────────────────────────
-  const sessionPath = path.resolve(account.sessionFile);
-  await context.storageState({ path: sessionPath });
-  console.log(`[LOGIN:${account.name}] ✓ Session saved → ${sessionPath}`);
+  const proxyPassword = resolveProxyPassword(env);
 
-  await browser.close();
-  return true;
+  console.log(`[LOGIN:${env.name}] Launching ${settings.headless ? 'headless ' : ''}browser...`);
+
+  const session = new LoginSession(
+    { account: env, email, password, settings, proxyPassword },
+    {
+      launchBrowser: () => defaultLaunchBrowser(settings),
+      logger: (msg) => console.log(msg),
+    }
+  );
+  // Release our local plaintext reference immediately — the session holds its own
+  // copy which IT clears after the field-fill.
+  password = null;
+
+  const finalState = await session.run({
+    interactiveAsk: (q) => ask(q), // CLI 2FA fallback: block on the terminal prompt
+  });
+
+  if (finalState === LOGIN_STATES.OK) {
+    console.log(`[LOGIN:${env.name}] ✓ Login OK.`);
+    return true;
+  }
+  console.error(`[LOGIN:${env.name}] ✗ Login ${finalState}: ${session.detail || ''}`);
+  return false;
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
@@ -245,24 +193,33 @@ async function main() {
   const nameIdx = args.indexOf('--account');
   const targetName = nameIdx !== -1 ? args[nameIdx + 1] : null;
 
+  const settings = db.getSettings();
+  const accounts = db.listAccounts(); // all accounts (CLI can log in disabled ones too)
+
+  if (accounts.length === 0) {
+    console.error('[LOGIN] No accounts in the database. Add one via the control-plane UI first.');
+    rl.close();
+    process.exit(1);
+  }
+
   let targets = [];
 
   if (flagAll) {
     targets = accounts;
   } else if (targetName) {
-    const found = accounts.find((a) => a.name === targetName);
+    const found = db.getAccountByName(targetName);
     if (!found) {
-      console.error(`[LOGIN] No account named "${targetName}" found in accounts.json`);
+      console.error(`[LOGIN] No account named "${targetName}" found in the database.`);
       console.error(`[LOGIN] Available: ${accounts.map((a) => a.name).join(', ')}`);
       rl.close();
       process.exit(1);
     }
     targets = [found];
   } else {
-    // Interactive: show list and let user pick
+    // Interactive: show list and let user pick.
     console.log('\n[LOGIN] Available accounts:');
-    accounts.forEach((a, i) => console.log(`  [${i + 1}] ${a.name}  (${a.sessionFile})`));
-    console.log(`  [0] Login ALL accounts`);
+    accounts.forEach((a, i) => console.log(`  [${i + 1}] ${a.name}  (${a.session_file})`));
+    console.log('  [0] Login ALL accounts');
 
     const choice = await ask('\n[LOGIN] Enter number: ');
     const idx = parseInt(choice, 10);
@@ -279,15 +236,20 @@ async function main() {
   }
 
   for (const account of targets) {
-    await loginAccount(account);
+    await loginAccount(account, settings);
   }
 
   console.log('\n[LOGIN] Done. Run "npm start" to launch the bot.');
   rl.close();
 }
 
-main().catch((err) => {
-  console.error('[LOGIN] Fatal:', err.message);
-  rl.close();
-  process.exit(1);
-});
+// Only run the CLI when invoked directly (require()-safe for tests).
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('[LOGIN] Fatal:', err.message);
+    rl.close();
+    process.exit(1);
+  });
+}
+
+module.exports = { loginAccount, resolvePassword, resolveProxyPassword };

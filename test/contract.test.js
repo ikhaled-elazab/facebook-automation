@@ -157,11 +157,20 @@ let client;
 before(async () => {
   db.getDb();
   // Seed one account so /accounts returns a populated Account to inspect.
-  db.insertAccount({
+  // v2: the account is the LOGIN ENVELOPE only — the per-target field
+  // target_page_url moved to branches, so it is NOT an account column anymore.
+  // The status endpoint (StatusAccountSummary) needs a branch under the account so
+  // the per-account rollup populates its branches[] drill-down.
+  const contractAcctId = db.insertAccount({
     name: 'contractAcct',
     email: 'c@x.com',
     password_enc: 'iv:tag:ct',
     session_file: 'sessions/c.json',
+  });
+  db.insertBranch({
+    account_id: contractAcctId,
+    name: 'default',
+    is_default: 1,
     target_page_url: 'https://fb.com/page',
   });
 

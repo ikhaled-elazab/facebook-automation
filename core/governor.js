@@ -16,10 +16,13 @@
  *   2. active-hours window  — skip actions outside [active_hours_start,
  *      active_hours_end) in the account's LOCAL hour (timezone_id), so the bot
  *      mimics a human who is only awake during the day.
- *   3. daily caps — per-account (account.dailyActionCap) AND global
- *      (settings.global_daily_action_cap). 0 = UNLIMITED for either (special-cased,
- *      NOT "cap of zero = block everything"). The per-account cap, when NULL,
- *      inherits the global cap.
+ *   3. daily caps — THREE TIERS, all enforced (most-specific first):
+ *        a. per-BRANCH (branch.dailyActionCap; NULL = inherit account ceiling)
+ *        b. per-ACCOUNT ceiling (branch.accountDailyActionCap; NULL = inherit global)
+ *        c. GLOBAL (settings.global_daily_action_cap)
+ *      0 = UNLIMITED for any tier (special-cased, NOT "cap of zero = block all").
+ *      The branch cap counts that branch's actions; the account ceiling counts
+ *      ALL the account's branches summed; the global counts everything.
  *
  * TIMEZONE basis: the daily-cap day window (db.countActionsToday) is the
  * SERVER-LOCAL calendar day. The active-hours window is the ACCOUNT-LOCAL hour
@@ -89,9 +92,12 @@ function withinActiveHours(hour, start, end) {
  * @param {object} settings db.getSettings() row (snake_case). Uses
  *   pacing_enabled, global_daily_action_cap, active_hours_start, active_hours_end.
  * @param {object} [deps] injectable deps for testing.
- * @param {(accountId?: number|null) => number} [deps.countActionsToday] defaults to db.countActionsToday.
+ * @param {(accountId?: number|null) => number} [deps.countActionsToday] defaults to db.countActionsToday
+ *   (per-account / global tier).
+ * @param {(branchId: number) => number} [deps.countBranchActionsToday] defaults to
+ *   db.countBranchActionsToday (per-branch tier).
  * @param {() => Date} [deps.now] clock, defaults to () => new Date().
- * @returns {{ canAct: (account: object) => { allowed: boolean, reason: string, detail: string|null } }}
+ * @returns {{ canAct: (branch: object) => { allowed: boolean, reason: string, detail: string|null } }}
  */
 function createGovernor(settings, deps = {}) {
   const s = settings || {};
@@ -100,6 +106,8 @@ function createGovernor(settings, deps = {}) {
   const activeStart = intOr(s.active_hours_start, 0);
   const activeEnd = intOr(s.active_hours_end, 24);
   const countActionsToday = deps.countActionsToday || ((accountId) => db.countActionsToday(accountId));
+  const countBranchActionsToday =
+    deps.countBranchActionsToday || ((branchId) => db.countBranchActionsToday(branchId));
   const now = deps.now || (() => new Date());
 
   /**
@@ -111,13 +119,15 @@ function createGovernor(settings, deps = {}) {
    * `false` → ALLOWED — the single most dangerous default for a ban guard. So on
    * ANY ambiguity we return a sentinel that the caller treats as "cap reached"
    * (deny). canAct stays never-throwing because this helper never rethrows.
-   * @param {number|null} accountId scope (null = global)
+   * @param {() => number} counter zero-arg thunk returning today's count for the
+   *   scope being checked (branch / account / global). Wrapping the count call in
+   *   a thunk lets the SAME fail-closed guard protect all three cap tiers.
    * @returns {{ ok: boolean, count: number }} ok=false → fail-closed (deny)
    */
-  function safeCount(accountId) {
+  function safeCount(counter) {
     let raw;
     try {
-      raw = countActionsToday(accountId);
+      raw = counter();
     } catch {
       // Count source threw (e.g. SQLITE_BUSY / corruption) — fail CLOSED.
       return { ok: false, count: NaN };
@@ -137,19 +147,25 @@ function createGovernor(settings, deps = {}) {
   }
 
   /**
-   * @param {object} account hydrated account (uses .id, .name, .dailyActionCap, .timezoneId)
+   * Three-tier daily-cap hierarchy. Most-specific tier first; a NULL/undefined cap
+   * at a tier means "inherit the next-broader tier's cap". 0 = unlimited at any
+   * tier (skip it). Each enforced tier is fail-closed via safeCount.
+   *
+   * @param {object} branch hydrated branch (uses .id, .accountId, .dailyActionCap,
+   *   .accountDailyActionCap, .name, .timezoneId)
    * @returns {{ allowed: boolean, reason: string, detail: string|null }}
-   *   reason ∈ { 'ok', 'pacing_disabled', 'outside_active_hours', 'account_cap',
-   *              'global_cap', 'count_error' }
+   *   reason ∈ { 'ok', 'pacing_disabled', 'outside_active_hours', 'branch_cap',
+   *              'account_cap', 'global_cap', 'count_error' }
    */
-  function canAct(account) {
+  function canAct(branch) {
     // 1. Master switch off → governor is a no-op (humanizer delays still apply).
     if (!pacingEnabled) {
       return { allowed: true, reason: 'pacing_disabled', detail: null };
     }
 
-    // 2. Active-hours window (account-local hour).
-    const hour = localHour(now(), account && account.timezoneId);
+    // 2. Active-hours window (account-local hour; timezone is per-account, carried
+    //    on the hydrated branch as timezoneId).
+    const hour = localHour(now(), branch && branch.timezoneId);
     if (!withinActiveHours(hour, activeStart, activeEnd)) {
       return {
         allowed: false,
@@ -158,34 +174,51 @@ function createGovernor(settings, deps = {}) {
       };
     }
 
-    // 3. Per-account daily cap (NULL/undefined inherits the global cap; 0 = unlimited).
-    const acctCapRaw = account ? account.dailyActionCap : null;
-    const acctCap =
-      acctCapRaw === null || acctCapRaw === undefined ? globalCap : intOr(acctCapRaw, globalCap);
-    if (acctCap > 0) {
-      const { ok, count: acctCount } = safeCount(account ? account.id : null);
+    // Resolve the three cap tiers. NULL/undefined inherits the next-broader tier.
+    const acctCeilingRaw = branch ? branch.accountDailyActionCap : null;
+    const acctCeiling =
+      acctCeilingRaw === null || acctCeilingRaw === undefined
+        ? globalCap
+        : intOr(acctCeilingRaw, globalCap);
+    const branchCapRaw = branch ? branch.dailyActionCap : null;
+    const branchCap =
+      branchCapRaw === null || branchCapRaw === undefined ? acctCeiling : intOr(branchCapRaw, acctCeiling);
+
+    // 3. Per-BRANCH cap (counts THIS branch's actions; 0 = unlimited).
+    if (branchCap > 0) {
+      const { ok, count } = safeCount(() => countBranchActionsToday(branch ? branch.id : null));
       if (!ok) {
-        // Count unavailable/ambiguous — fail CLOSED (deny) rather than allow.
+        return {
+          allowed: false,
+          reason: 'count_error',
+          detail: 'branch daily count unavailable — failing closed (deny)',
+        };
+      }
+      if (count >= branchCap) {
+        return { allowed: false, reason: 'branch_cap', detail: `branch ${count}/${branchCap} today` };
+      }
+    }
+
+    // 4. Per-ACCOUNT ceiling (sums ALL the account's branches; 0 = unlimited).
+    if (acctCeiling > 0) {
+      const accountId = branch ? branch.accountId : null;
+      const { ok, count } = safeCount(() => countActionsToday(accountId));
+      if (!ok) {
         return {
           allowed: false,
           reason: 'count_error',
           detail: 'account daily count unavailable — failing closed (deny)',
         };
       }
-      if (acctCount >= acctCap) {
-        return {
-          allowed: false,
-          reason: 'account_cap',
-          detail: `account ${acctCount}/${acctCap} today`,
-        };
+      if (count >= acctCeiling) {
+        return { allowed: false, reason: 'account_cap', detail: `account ${count}/${acctCeiling} today` };
       }
     }
 
-    // 4. Global daily cap (0 = unlimited).
+    // 5. GLOBAL daily cap (0 = unlimited).
     if (globalCap > 0) {
-      const { ok, count: globalCount } = safeCount(null);
+      const { ok, count: globalCount } = safeCount(() => countActionsToday(null));
       if (!ok) {
-        // Count unavailable/ambiguous — fail CLOSED (deny) rather than allow.
         return {
           allowed: false,
           reason: 'count_error',

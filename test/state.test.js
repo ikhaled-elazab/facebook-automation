@@ -96,17 +96,25 @@ test('extractUserIdFromProfileUrl returns null when ownProfileUrl absent', () =>
   assert.strictEqual(state.extractUserIdFromProfileUrl({ ownProfileUrl: '' }), null);
 });
 
-// ── DB-backed state round-trips (key by account.id) ──────────────────────────
+// ── DB-backed state round-trips (key by BRANCH id since v2) ───────────────────
+// v2: account_state/seen_comments/dm_sent are keyed by branch_id (the monitoring
+// unit). core/state.js helpers read `branch.id`, so the POJO's `.id` is a BRANCH
+// id. target_page_url moved to branches; an account is the login envelope only.
 
 test('DB-backed state: last post id, shared posts (dedup), seen comments, dm sent', () => {
   db.getDb();
-  const id = db.insertAccount({
+  const accountId = db.insertAccount({
     name: 'stateAcct',
     email: 'e@x.com',
     session_file: 'sessions/stateAcct.json',
+  });
+  const branchId = db.insertBranch({
+    account_id: accountId,
+    name: 'default',
+    is_default: 1,
     target_page_url: 'https://fb.com/p',
   });
-  const account = { id };
+  const account = { id: branchId };
 
   state.writeLastPostId(account, 'P1');
   assert.strictEqual(state.readLastPostId(account), 'P1');

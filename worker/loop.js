@@ -258,7 +258,7 @@ async function checkAndAct(page, account, ctx) {
         logger.warn(account.name, label, `Skipped by pacing governor (${decision.reason}): ${decision.detail || ''}`);
         try {
           record({
-            accountId: account.id,
+            branchId: account.id,
             actionType: actionTypeFor(label),
             targetUrl,
             status: 'skipped',
@@ -274,7 +274,7 @@ async function checkAndAct(page, account, ctx) {
     const failed = result === RETRY_FAILED;
     try {
       record({
-        accountId: account.id,
+        branchId: account.id,
         actionType: actionTypeFor(label),
         targetUrl,
         status: failed ? 'failed' : 'ok',
@@ -466,24 +466,58 @@ function computeNextBackoff(currentBackoffMs, sessionDurationMs) {
 }
 
 /**
- * Run one full account session inside ONE browser instance: immediate first
- * cycle, then on the account's check interval, forever. The ENTIRE cycle body
- * (checkAndAct + monitorAndReplyToComments) is wrapped so a throw anywhere in a
- * cycle is logged and the loop CONTINUES to the next interval — a single bad
- * cycle must not break the loop (HIGH-1). A throw OUTSIDE the cycle loop (e.g.
- * the browser itself dying) propagates to the supervisor (runAccount) which
- * respawns with backoff.
+ * Resolve the account's hydrated branches list, defaulting to a single-element
+ * list wrapping the account itself when no branches[] is present (legacy/test
+ * callers that still pass a flat account object). This keeps runAccountSession
+ * working for both the Phase 2 shape ({ ..., branches: [...] }) and a bare
+ * account/branch object.
+ * @param {object} account hydrated account (Phase 2: carries branches[])
+ * @returns {object[]} branches to monitor this cycle (never empty if account valid)
+ */
+function resolveBranches(account) {
+  if (Array.isArray(account.branches)) return account.branches;
+  // Legacy/test fallback: treat the passed object itself as the (only) branch.
+  return [account];
+}
+
+/**
+ * The session-loop cadence: the SMALLEST check interval among the account's
+ * branches (so no branch is starved), floored at 1 minute. Each cycle runs ALL
+ * branches sequentially; using the min interval means a branch that wants a
+ * 5-minute cadence is never delayed by a sibling that wants 30.
+ * @param {object[]} branches
+ * @returns {number} interval in ms
+ */
+function sessionIntervalMs(branches) {
+  const mins = branches
+    .map((b) => Number(b.checkIntervalMinutes))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  const minMinutes = mins.length ? Math.min(...mins) : 7;
+  return Math.max(minMinutes, 1) * 60 * 1000;
+}
+
+/**
+ * Run one full account session inside ONE browser instance (one login = one
+ * browser). Each CYCLE iterates the account's branches SEQUENTIALLY, each branch
+ * a monitoring pass on the shared logged-in identity. A throw in ONE branch is
+ * caught so SIBLING branches still run (mirrors the per-cycle guard, now per
+ * branch — Phase 2). A throw OUTSIDE the per-branch guard (the browser itself
+ * dying) propagates to the supervisor (runAccount) which respawns with backoff.
  *
- * @param {object} account hydrated account
- * @param {string} sessionPath resolved storage-state path
+ * Each branch reads/writes its own state by branch_id (the hydrated branch's
+ * `.id`) and records its own per-branch status row.
+ *
+ * @param {object} account hydrated account (Phase 2: carries branches[])
+ * @param {string} sessionPath resolved storage-state path (per-account login)
  * @param {object} settings db.getSettings() row
- * @param {object} ctx run context ({ settings, h, withRetry })
+ * @param {object} ctx run context ({ settings, h, withRetry, governor, logAction })
  * @param {object} deps injectable deps ({ launchBrowser })
  */
 async function runAccountSession(account, sessionPath, settings, ctx, deps) {
   const { h } = ctx;
-  const intervalMinutes = account.checkIntervalMinutes || 7;
-  const intervalMs = intervalMinutes * 60 * 1000;
+  const branches = resolveBranches(account);
+  const intervalMs = sessionIntervalMs(branches);
+  const intervalMinutes = Math.round(intervalMs / 60000);
 
   // Each account owns its browser — a crash here is isolated to this account.
   const launchBrowser =
@@ -509,60 +543,86 @@ async function runAccountSession(account, sessionPath, settings, ctx, deps) {
     return;
   }
 
-  // HIGH-1: a throw inside a cycle is caught here so the while-loop CONTINUES.
-  const runOneCycle = async () => {
-    const context = await browser.newContext(buildContextOptions(account, sessionPath, settings));
-    const page = await context.newPage();
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    });
+  // Per-branch status writer (P5 — account_status keyed by branch_id, so one
+  // branch's error is never clobbered by a sibling's running). Best-effort.
+  const recordBranchStatus = (branch, status, detail) => {
     try {
-      await checkAndAct(page, account, ctx);
-      // Pass ctx so the monitor gates its per-comment reply/DM writes through the
-      // SAME governor (a comment-reply is a ban-risk write that must respect caps).
-      await monitorAndReplyToComments(page, account, settings, h, ctx);
-    } finally {
-      await context.close().catch(() => {});
-      logger.log(account.name, 'BOOT', 'Browser context closed after cycle.');
+      db.setBranchStatus(branch.id, status, detail);
+    } catch {
+      /* per-branch status is best-effort — never break the cycle on a write */
     }
   };
 
-  // A cycle wrapper that never rejects: writes BOTH the per-account cycle status
-  // (P5 — account_status, so one account's error is not clobbered by another's
-  // running) AND the single-row liveness heartbeat (HIGH-2 — the control-plane's
-  // global "process alive" contract). Swallows any cycle throw so the loop
-  // survives it (HIGH-1).
-  const recordStatus = (status, detail) => {
+  // Run ONE branch's monitoring pass in its own context. NEVER throws — a branch
+  // failure is logged + recorded against that branch's status row, and the caller
+  // continues to the next sibling branch (Phase 2 per-branch isolation).
+  const runOneBranch = async (branch) => {
+    recordBranchStatus(branch, 'running', `branch=${branch.branchName || branch.name} cycle started`);
+    // A fresh context per branch keeps per-branch nav/cookies isolated while
+    // reusing the one logged-in storageState (sessionFile) — same identity.
+    let context = null;
     try {
-      db.setAccountStatus(account.id, status, detail);
-    } catch {
-      /* per-account status is best-effort — never break the cycle on a write */
+      // browser.newContext() MUST be inside the try: a context-creation throw
+      // (memory pressure / browser crash — real failure modes) has to isolate to
+      // THIS branch, not propagate out of runOneBranch and tear down the account's
+      // sibling-branch loop. (v2 regression fix: the refactor hoisted this above
+      // the try, silently breaking the "NEVER throws" contract this function
+      // promises and the per-branch isolation the whole feature depends on.)
+      context = await browser.newContext(buildContextOptions(account, sessionPath, settings));
+      const page = await context.newPage();
+      await page.addInitScript(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      });
+      // checkAndAct + monitor operate on the BRANCH: its `.id` keys state/content,
+      // its targetPageUrl/groups/comments drive the actions, and ctx threads the
+      // SAME governor so the three-tier caps are enforced per write.
+      await checkAndAct(page, branch, ctx);
+      await monitorAndReplyToComments(page, branch, settings, h, ctx);
+      recordBranchStatus(branch, 'ok', `branch=${branch.branchName || branch.name} cycle ok`);
+    } catch (err) {
+      // A single branch throwing must NOT break sibling branches.
+      logger.logError(account.name, 'BRANCH', err);
+      recordBranchStatus(
+        branch,
+        'error',
+        `branch=${branch.branchName || branch.name} cycle failed: ${err.message}`
+      );
+    } finally {
+      // context is null if newContext() itself threw — guard the close.
+      if (context) await context.close().catch(() => {});
     }
   };
+
+  // One full cycle = run EVERY branch sequentially. Never rejects: each branch is
+  // individually guarded, and the global liveness heartbeat is written once per
+  // cycle (HIGH-2 — the control-plane's process-alive contract).
   const runCycleGuarded = async () => {
-    recordStatus('running', `account=${account.name} cycle started`);
-    try {
-      await runOneCycle();
-      recordStatus('ok', `account=${account.name} cycle ok`);
+    let anyError = false;
+    for (const branch of branches) {
+      if (shuttingDown) break;
+      await runOneBranch(branch);
+      // Re-read the branch's status to learn if it errored (cheap, best-effort).
       try {
-        db.heartbeat('running', `account=${account.name} cycle ok`);
+        const st = db.getBranchStatus(branch.id);
+        if (st && st.status === 'error') anyError = true;
       } catch {
-        /* heartbeat is best-effort */
-      }
-    } catch (err) {
-      logger.logError(account.name, 'CYCLE', err);
-      recordStatus('error', `account=${account.name} cycle failed: ${err.message}`);
-      try {
-        db.heartbeat('error', `account=${account.name} cycle failed: ${err.message}`);
-      } catch {
-        /* heartbeat is best-effort */
+        /* best-effort */
       }
     }
+    try {
+      db.heartbeat(
+        anyError ? 'error' : 'running',
+        `account=${account.name} cycle done (${branches.length} branch(es))`
+      );
+    } catch {
+      /* heartbeat is best-effort */
+    }
+    logger.log(account.name, 'BOOT', `Cycle done for ${branches.length} branch(es).`);
   };
 
   try {
-    // First check immediately, then on interval. The guarded cycle never throws,
-    // so the only ways out of this loop are an explicit shutdown or a throw from
+    // First check immediately, then on interval. runCycleGuarded never throws, so
+    // the only ways out of this loop are an explicit shutdown or a throw from
     // sleep()/browser internals — both intentional escapes to the supervisor.
     await runCycleGuarded();
 
@@ -692,6 +752,9 @@ module.exports = {
   runAccount,
   runAccountSession,
   buildContextOptions,
+  // branch helpers (pure, unit-testable)
+  resolveBranches,
+  sessionIntervalMs,
   // reliability surface (wired by index.js signal handlers)
   registerBrowser,
   unregisterBrowser,

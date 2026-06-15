@@ -84,7 +84,10 @@ test("detectBanSignal logs ONE status:'blocked' row on a checkpoint URL", async 
   assert.strictEqual(detected, true, 'a checkpoint URL is detected');
   assert.strictEqual(logged.length, 1, 'exactly one blocked row');
   assert.strictEqual(logged[0].status, 'blocked', "status is 'blocked' (the ban-signal vocab)");
-  assert.strictEqual(logged[0].accountId, ACCOUNT.id, 'row is scoped to the account');
+  // v2: detectBanSignal scopes the row to the BRANCH (the monitoring unit) — the
+  // hydrated branch's `.id` is the branch id, and the row carries branchId (db.logAction
+  // resolves the owning account_id). ACCOUNT here is the hydrated branch POJO.
+  assert.strictEqual(logged[0].branchId, ACCOUNT.id, 'row is scoped to the branch');
   assert.ok(/LIKE/.test(logged[0].detail), 'detail names the failing action');
 });
 

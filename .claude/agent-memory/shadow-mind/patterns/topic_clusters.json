@@ -1,0 +1,46 @@
+{
+  "clusters": [
+    {
+      "cluster_id": "c-001",
+      "confidence": 0.3,
+      "first_seen": "2026-06-15T12:04:44Z",
+      "last_seen": "2026-06-15T12:04:45Z",
+      "observation_count": 2,
+      "pattern": "branch schema account",
+      "source_sessions": [
+        "multibranch-design"
+      ],
+      "successful_fix": null,
+      "trigger": [
+        "branch",
+        "schema",
+        "account",
+        "rebuild",
+        "accounts"
+      ]
+    },
+    {
+      "cluster_id": "c-002",
+      "confidence": 0.3,
+      "first_seen": "2026-06-15T12:04:45Z",
+      "last_seen": "2026-06-15T12:04:45Z",
+      "observation_count": 2,
+      "pattern": "check count wal",
+      "source_sessions": [
+        "multibranch-design"
+      ],
+      "successful_fix": null,
+      "trigger": [
+        "check",
+        "count",
+        "wal",
+        "migration",
+        "backup"
+      ]
+    }
+  ],
+  "computed_at": "2026-06-15T14:15:53+00:00",
+  "min_cluster_size": 2,
+  "sample_size": 6,
+  "version": 1
+}

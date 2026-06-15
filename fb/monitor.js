@@ -244,7 +244,7 @@ async function monitorAndReplyToComments(page, account, settings, h, ctx = {}) {
               );
               try {
                 logAction({
-                  accountId: account.id,
+                  branchId: account.id,
                   actionType: 'comment',
                   targetUrl: postUrl,
                   status: 'skipped',
@@ -272,7 +272,7 @@ async function monitorAndReplyToComments(page, account, settings, h, ctx = {}) {
             if (replyLogged) return;
             replyLogged = true;
             try {
-              logAction({ accountId: account.id, actionType: 'comment', targetUrl: postUrl, status, detail });
+              logAction({ branchId: account.id, actionType: 'comment', targetUrl: postUrl, status, detail });
             } catch {
               /* best-effort — never break the scan on a log write */
             }
@@ -360,7 +360,7 @@ async function monitorAndReplyToComments(page, account, settings, h, ctx = {}) {
             const dmStatus = dmResult && dmResult.sent ? 'ok' : dmResult && dmResult.reason === 'error' ? 'failed' : 'skipped';
             try {
               logAction({
-                accountId: account.id,
+                branchId: account.id,
                 actionType: 'dm',
                 targetUrl: commenterProfileUrl,
                 status: dmStatus,

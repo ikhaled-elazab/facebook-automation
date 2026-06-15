@@ -70,27 +70,31 @@ const loginSchema = z
   })
   .strict();
 
-// ── Accounts ────────────────────────────────────────────────────────────────--
+// ── Accounts (Phase 2 — the LOGIN ENVELOPE) ───────────────────────────────────
 //
 // Writable account columns ONLY. `id`, `created_at`, `updated_at`, and the *_enc
 // secret columns are deliberately excluded — they are managed by db.js / the
 // route, never client-set. `password` / `proxy_password` are plaintext inputs the
 // route encrypts; they are NOT columns and are split out before persist.
+//
+// Phase 2 RE-KEY: the per-target monitoring fields (target_page_url,
+// own_profile_url, send_dm_to_commenters, dm_as_page_url, check_interval_minutes)
+// and the content arrays (comments/replies/dm_messages/groups) MOVED to BRANCHES.
+// The account schema must NOT accept them anymore — under `.strict()` a client
+// that still sends them is REJECTED (422), which is the correct, loud failure for
+// a stale caller (vs. silently writing to a dropped column → 500). The account
+// now owns only login/identity/fingerprint/proxy + the per-account cap CEILING.
 
 const accountWritableFields = {
   name: nonEmptyString.max(256),
   email: z.string().trim().email().max(320),
   session_file: nonEmptyString.max(1024),
-  target_page_url: optionalUrl,
-  own_profile_url: optionalUrl.nullable(),
-  send_dm_to_commenters: sqliteBool,
-  dm_as_page_url: optionalUrl.nullable(),
   user_agent: z.string().trim().max(1024).nullable(),
   locale: z.string().trim().max(35),
   timezone_id: z.string().trim().max(64),
-  check_interval_minutes: z.coerce.number().int().min(1).max(1440),
   proxy_server: z.string().trim().max(2048).nullable(),
   proxy_username: z.string().trim().max(256).nullable(),
+  // Per-account pacing CEILING (NULL = inherit settings.global_daily_action_cap).
   daily_action_cap: z.coerce.number().int().min(0).max(100000).nullable(),
   enabled: sqliteBool,
 };
@@ -101,35 +105,21 @@ const accountSecretFields = {
   proxy_password: z.string().min(1).max(1024).optional(),
 };
 
-/** Child collections — replaced wholesale by db.js setters. */
-const accountChildFields = {
-  comments: textArray.optional(),
-  replies: textArray.optional(),
-  dm_messages: textArray.optional(),
-  groups: urlArray.optional(),
-};
-
-// Create: name/email/session_file/target_page_url required; rest optional with
-// DB defaults. Secrets + children optional. .strict() blocks unknown keys.
+// Create: name/email/session_file required; rest optional with DB defaults.
+// Secrets optional. .strict() blocks unknown keys (incl. the moved branch fields).
 const createAccountSchema = z
   .object({
     name: accountWritableFields.name,
     email: accountWritableFields.email,
     session_file: accountWritableFields.session_file,
-    target_page_url: accountWritableFields.target_page_url,
-    own_profile_url: accountWritableFields.own_profile_url.optional(),
-    send_dm_to_commenters: accountWritableFields.send_dm_to_commenters.optional(),
-    dm_as_page_url: accountWritableFields.dm_as_page_url.optional(),
     user_agent: accountWritableFields.user_agent.optional(),
     locale: accountWritableFields.locale.optional(),
     timezone_id: accountWritableFields.timezone_id.optional(),
-    check_interval_minutes: accountWritableFields.check_interval_minutes.optional(),
     proxy_server: accountWritableFields.proxy_server.optional(),
     proxy_username: accountWritableFields.proxy_username.optional(),
     daily_action_cap: accountWritableFields.daily_action_cap.optional(),
     enabled: accountWritableFields.enabled.optional(),
     ...accountSecretFields,
-    ...accountChildFields,
   })
   .strict();
 
@@ -139,31 +129,98 @@ const updateAccountSchema = z
     name: accountWritableFields.name.optional(),
     email: accountWritableFields.email.optional(),
     session_file: accountWritableFields.session_file.optional(),
-    target_page_url: accountWritableFields.target_page_url.optional(),
-    own_profile_url: accountWritableFields.own_profile_url.optional(),
-    send_dm_to_commenters: accountWritableFields.send_dm_to_commenters.optional(),
-    dm_as_page_url: accountWritableFields.dm_as_page_url.optional(),
     user_agent: accountWritableFields.user_agent.optional(),
     locale: accountWritableFields.locale.optional(),
     timezone_id: accountWritableFields.timezone_id.optional(),
-    check_interval_minutes: accountWritableFields.check_interval_minutes.optional(),
     proxy_server: accountWritableFields.proxy_server.optional(),
     proxy_username: accountWritableFields.proxy_username.optional(),
     daily_action_cap: accountWritableFields.daily_action_cap.optional(),
     enabled: accountWritableFields.enabled.optional(),
     ...accountSecretFields,
-    ...accountChildFields,
   })
   .strict()
   .refine((obj) => Object.keys(obj).length > 0, {
     message: 'At least one field must be provided.',
   });
 
-// The set of writable account COLUMN names (excludes secrets + children, which
-// are handled specially). Used by the route to split a validated patch into the
-// part that goes to db.insertAccount/db.updateAccount vs the special parts.
+// The set of writable account COLUMN names (excludes secrets, handled specially).
+// Used by the route to split a validated patch into the part that goes to
+// db.insertAccount/db.updateAccount vs the encrypted secrets.
 const ACCOUNT_COLUMN_KEYS = Object.freeze(Object.keys(accountWritableFields));
-const ACCOUNT_CHILD_KEYS = Object.freeze(Object.keys(accountChildFields));
+
+// ── Branches (Phase 2 — the MONITORING UNIT, 1 account : N branches) ──────────
+//
+// Same trust-boundary contract as accounts: `.strict()` so unknown keys reach a
+// 422, NOT the db.js dynamic SQL builder. A branch owns the monitoring target
+// (target_page_url + own_profile_url + groups), the DM-as-page identity, the
+// check interval, the per-branch cap (NULL = inherit account ceiling), enabled,
+// a name, AND its content arrays (comments/replies/dm_messages/groups).
+//
+// EXCLUDED on purpose (managed by db.js / dedicated paths, never client-set):
+//   - account_id : a branch cannot be re-parented (set once at create, via URL).
+//   - is_default : the one-default-per-account invariant is preserved by the
+//                  dedicated setDefaultBranch path (POST /branches/:id/default),
+//                  never by a free-form column write.
+//   - id / created_at / updated_at : managed by the DB.
+// These mirror db.js BRANCH_UPDATE_COLUMNS exactly (defense in depth: even if a
+// key slips past zod, updateBranch's frozen allowlist rejects it).
+
+const branchWritableFields = {
+  name: nonEmptyString.max(256),
+  target_page_url: optionalUrl,
+  own_profile_url: optionalUrl.nullable(),
+  send_dm_to_commenters: sqliteBool,
+  dm_as_page_url: optionalUrl.nullable(),
+  check_interval_minutes: z.coerce.number().int().min(1).max(1440),
+  // Per-branch pacing override (NULL = inherit accounts.daily_action_cap).
+  daily_action_cap: z.coerce.number().int().min(0).max(100000).nullable(),
+  enabled: sqliteBool,
+};
+
+/** Branch content collections — replaced wholesale by db.js branch setters. */
+const branchChildFields = {
+  comments: textArray.optional(),
+  replies: textArray.optional(),
+  dm_messages: textArray.optional(),
+  groups: urlArray.optional(),
+};
+
+// Create: name required; target_page_url defaults to '' in-schema-optional (DB
+// default ''), the rest optional with DB defaults. Children optional. .strict().
+const createBranchSchema = z
+  .object({
+    name: branchWritableFields.name,
+    target_page_url: branchWritableFields.target_page_url.optional(),
+    own_profile_url: branchWritableFields.own_profile_url.optional(),
+    send_dm_to_commenters: branchWritableFields.send_dm_to_commenters.optional(),
+    dm_as_page_url: branchWritableFields.dm_as_page_url.optional(),
+    check_interval_minutes: branchWritableFields.check_interval_minutes.optional(),
+    daily_action_cap: branchWritableFields.daily_action_cap.optional(),
+    enabled: branchWritableFields.enabled.optional(),
+    ...branchChildFields,
+  })
+  .strict();
+
+// Update: every field optional (partial patch). At least one key required.
+const updateBranchSchema = z
+  .object({
+    name: branchWritableFields.name.optional(),
+    target_page_url: branchWritableFields.target_page_url.optional(),
+    own_profile_url: branchWritableFields.own_profile_url.optional(),
+    send_dm_to_commenters: branchWritableFields.send_dm_to_commenters.optional(),
+    dm_as_page_url: branchWritableFields.dm_as_page_url.optional(),
+    check_interval_minutes: branchWritableFields.check_interval_minutes.optional(),
+    daily_action_cap: branchWritableFields.daily_action_cap.optional(),
+    enabled: branchWritableFields.enabled.optional(),
+    ...branchChildFields,
+  })
+  .strict()
+  .refine((obj) => Object.keys(obj).length > 0, {
+    message: 'At least one field must be provided.',
+  });
+
+const BRANCH_COLUMN_KEYS = Object.freeze(Object.keys(branchWritableFields));
+const BRANCH_CHILD_KEYS = Object.freeze(Object.keys(branchChildFields));
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 // Writable settings columns ONLY. `id` and `updated_at` excluded.
@@ -218,6 +275,19 @@ const workerActionSchema = z
   })
   .strict();
 
+// ── Login control (Phase 3.5 — account-level login, 2FA mid-flow) ─────────────
+//
+// The 2FA code is a TRANSIENT secret-ish input: validated for shape ONLY, then
+// fed straight into the paused login flow (never logged, never persisted). FB
+// checkpoint codes are short numeric/alphanumeric strings; we bound the length to
+// blunt abuse without rejecting legitimate checkpoint formats. `.strict()` so no
+// extra keys ride along into the control layer.
+const login2faSchema = z
+  .object({
+    code: z.string().trim().min(1).max(32),
+  })
+  .strict();
+
 // ── Status / recent actions query ─────────────────────────────────────────────
 
 // `limit` caps the page size (default 50, max 500). `before` is a cursor: the
@@ -227,20 +297,31 @@ const recentActionsQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(500).optional(),
     account_id: id.optional(),
+    branch_id: id.optional(),
     before: id.optional(),
   })
   .strict();
 
+// `id` is the resource id in the path for item routes (accounts AND branches —
+// both are `INTEGER PRIMARY KEY`, validated identically). For the account-scoped
+// branch collection (/api/accounts/:accountId/branches) the parent id arrives as
+// `accountId`; a dedicated schema keeps the path-param name self-documenting.
 const idParamSchema = z.object({ id }).strict();
+const accountIdParamSchema = z.object({ accountId: id }).strict();
 
 module.exports = {
   loginSchema,
   createAccountSchema,
   updateAccountSchema,
+  createBranchSchema,
+  updateBranchSchema,
   updateSettingsSchema,
   workerActionSchema,
+  login2faSchema,
   recentActionsQuerySchema,
   idParamSchema,
+  accountIdParamSchema,
   ACCOUNT_COLUMN_KEYS,
-  ACCOUNT_CHILD_KEYS,
+  BRANCH_COLUMN_KEYS,
+  BRANCH_CHILD_KEYS,
 };

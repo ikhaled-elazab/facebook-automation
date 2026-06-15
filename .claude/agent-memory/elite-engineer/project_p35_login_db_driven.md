@@ -1,0 +1,21 @@
+---
+name: project-p35-login-db-driven
+description: Phase 3.5 login made DB+UI-driven; login-flow.js resumable state machine, server/login-control.js in-process registry (NOT pm2), login-control routes + contract shape, no-plaintext discipline, mount order
+metadata:
+  type: project
+---
+
+Phase 3.5 (2026-06-15) made login DB+UI-driven (Model A: creds entered in UI, stored encrypted, decrypted at login time). Login is ACCOUNT-level (not branch-level); session_file stays on accounts.
+
+**Why this design (the load-bearing decisions):**
+- **login-flow.js** (project root) is the reusable resumable flow extracted from login.js so BOTH the CLI and the server drive the SAME logic. The `LoginSession` class is a state machine: `idle→running→needs_2fa→(code)→running→ok|failed`. 2FA is resumable: when driven by the server it PAUSES on an internal deferred (`_twoFaDeferred`, bounded by `twoFaTimeoutMs` default 5min, unref'd timer); when driven by the CLI it BLOCKS on an injected `interactiveAsk` terminal prompt. `run()` NEVER throws — every failure maps to `failed`. Browser closed on EVERY exit path (success/fail/throw/abort) via `finally` → no orphaned chromium (parity with worker/loop.js HIGH-3).
+- **server/login-control.js** `createLoginControl()` is an IN-PROCESS per-account registry (Map<accountId, LoginSession>), NOT pm2 like worker-control.js. Reason: login is interactive/pausable — the route that POSTs the 2FA code must hand it to the exact paused in-process session, so it cannot be a detached process. One non-terminal session per account → concurrent launch throws ConflictError (409); a terminal (ok/failed) session is replaced on next launch (re-login allowed). Credentials decrypted HERE at launch time, handed to the session, never stored on the map/logged/returned.
+- **login.js** refactored: dropped `require('./accounts.json')`+`require('./config.json')`; loads via `db.listAccounts/getAccountById/getAccountByName/getSettings`; reuses `accountEnvelope()` from worker/loadConfig.js (the single snake→camel mapping so login + worker never drift); decrypts password at login time via crypto.decrypt; KEEPS env (FB_EMAIL/FB_PASS) + interactive prompt fallbacks + terminal 2FA. Guarded with `if (require.main === module)` so tests can require it without running the CLI. Exports `{ loginAccount, resolvePassword, resolveProxyPassword }`.
+
+**Mount order (server/app.js):** login-control router mounted at `/api/accounts` AFTER accountsRouter. Safe because account item routes (`/:id`) match a SINGLE segment, so two-segment `/api/accounts/:id/login[/status|/2fa]` falls through. A SINGLE registry instance (`opts.loginControl || createLoginControl({logger})`) is shared by every login route and exposed on `app.locals.loginControl` so graceful shutdown (server/index.js) calls `abortAll()` to close in-flight browsers before DB close.
+
+**No-plaintext discipline (deep-reviewer-gated):** plaintext password decrypted into a local, filled into ONE field, then released (`session._password = null` in finally). Never logged, never written back, never on the public view. 2FA code transient — filled + discarded. Only on-disk artifact is Playwright storageState (cookies only). Public session view = exactly `{account_name, status, detail, started_at, finished_at}` — no email/password/code. `login2faSchema` (.strict(), code 1..32 chars) added to server/schemas.js as the trust boundary.
+
+**Tests:** test/login.test.js (17 tests, all green) — fake browser/page driver steers the state machine with NO real browser/FB; genuine db.js+crypto.js exercised (real encrypt→store→load→decrypt round-trip). Covers crypto round-trip into the form, all state transitions incl. 2FA timeout + CLI fallback, route auth(401)/CSRF(403)/409-concurrent/202-launch/2fa-accept/400-no-cred, and no-plaintext-leak (logs + session file + DB).
+
+**Pre-existing v1 drift (NOT my regressions):** full suite has ~50 failures in v1-era test files (db/state/contract/dm/falsesuccess/loadConfig/retention + partial server/governor/loop/migrate) — all from removed v1 API (db.setAccountComments, account-keyed state) and v1 account bodies sending moved branch fields (now correctly 422). The 3 auth tests in server.test.js still PASS, proving app.js edits didn't break auth.

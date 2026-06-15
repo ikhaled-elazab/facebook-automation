@@ -65,22 +65,93 @@ test('withinActiveHours: start === end means full-day (always active), not empty
 // ── Daily caps ────────────────────────────────────────────────────────────────
 
 test('per-account cap: the (N+1)th action is SKIPPED (count >= cap blocks)', () => {
+  // v2 THREE-TIER: the per-account CEILING is carried on the hydrated branch as
+  // accountDailyActionCap and counted by countActionsToday(accountId). The branch
+  // cap (dailyActionCap) is left unlimited (0) so the account ceiling is the
+  // binding tier — exactly the v1 "per-account cap" semantics this test guards.
   const CAP = 5;
+  const branch = { id: 10, accountId: 1, dailyActionCap: 0, accountDailyActionCap: CAP };
+
   // count == cap → the next (the N+1th) action must be denied.
   const atCap = createGovernor(
     { pacing_enabled: 1, global_daily_action_cap: 0, ...IN_HOURS },
-    { now: clockAtLocalHour(10), countActionsToday: (id) => (id === 1 ? CAP : 0) }
+    {
+      now: clockAtLocalHour(10),
+      countActionsToday: (accountId) => (accountId === 1 ? CAP : 0),
+      countBranchActionsToday: () => 0,
+    }
   );
-  const denied = atCap.canAct({ id: 1, dailyActionCap: CAP });
+  const denied = atCap.canAct(branch);
   assert.strictEqual(denied.allowed, false, 'N+1th action denied at cap');
   assert.strictEqual(denied.reason, 'account_cap');
 
   // count == cap-1 → still allowed (this is the Nth, last permitted action).
   const underCap = createGovernor(
     { pacing_enabled: 1, global_daily_action_cap: 0, ...IN_HOURS },
-    { now: clockAtLocalHour(10), countActionsToday: (id) => (id === 1 ? CAP - 1 : 0) }
+    {
+      now: clockAtLocalHour(10),
+      countActionsToday: (accountId) => (accountId === 1 ? CAP - 1 : 0),
+      countBranchActionsToday: () => 0,
+    }
   );
-  assert.strictEqual(underCap.canAct({ id: 1, dailyActionCap: CAP }).allowed, true, 'Nth action allowed');
+  assert.strictEqual(underCap.canAct(branch).allowed, true, 'Nth action allowed');
+});
+
+test('per-branch cap: the (N+1)th action is SKIPPED with reason branch_cap', () => {
+  // v2 THREE-TIER guard: the per-BRANCH cap (branch.dailyActionCap) is counted by
+  // countBranchActionsToday(branch.id). Here the account ceiling + global are
+  // unlimited (0) so the BRANCH tier is the binding one — the headline anti-ban
+  // mechanism that lets two branches on one login be paced independently.
+  const CAP = 3;
+  const branch = { id: 10, accountId: 1, dailyActionCap: CAP, accountDailyActionCap: 0 };
+
+  // this branch's count == its cap → next action denied at the branch tier.
+  const atCap = createGovernor(
+    { pacing_enabled: 1, global_daily_action_cap: 0, ...IN_HOURS },
+    {
+      now: clockAtLocalHour(10),
+      countActionsToday: () => 0,
+      countBranchActionsToday: (branchId) => (branchId === 10 ? CAP : 0),
+    }
+  );
+  const denied = atCap.canAct(branch);
+  assert.strictEqual(denied.allowed, false, 'N+1th branch action denied at branch cap');
+  assert.strictEqual(denied.reason, 'branch_cap');
+
+  // count == cap-1 → still allowed (the Nth, last permitted branch action).
+  const underCap = createGovernor(
+    { pacing_enabled: 1, global_daily_action_cap: 0, ...IN_HOURS },
+    {
+      now: clockAtLocalHour(10),
+      countActionsToday: () => 0,
+      countBranchActionsToday: (branchId) => (branchId === 10 ? CAP - 1 : 0),
+    }
+  );
+  assert.strictEqual(underCap.canAct(branch).allowed, true, 'Nth branch action allowed');
+});
+
+test('per-branch isolation: one branch at its cap does NOT block a sibling branch', () => {
+  // Two branches under ONE account (shared login). branchA is at its branch cap;
+  // branchB is fresh. The per-branch counter must isolate them: branchA denied,
+  // branchB still allowed — independent per-branch pacing is the whole point of v2
+  // (this is the cap-tier mirror of the loop.js per-branch isolation guarantee).
+  const CAP = 4;
+  const branchA = { id: 10, accountId: 1, dailyActionCap: CAP, accountDailyActionCap: 0 };
+  const branchB = { id: 11, accountId: 1, dailyActionCap: CAP, accountDailyActionCap: 0 };
+  const gov = createGovernor(
+    { pacing_enabled: 1, global_daily_action_cap: 0, ...IN_HOURS },
+    {
+      now: clockAtLocalHour(10),
+      countActionsToday: () => 0,
+      // branchA has exhausted its cap; branchB has none yet.
+      countBranchActionsToday: (branchId) => (branchId === 10 ? CAP : 0),
+    }
+  );
+  const a = gov.canAct(branchA);
+  const b = gov.canAct(branchB);
+  assert.strictEqual(a.allowed, false, 'exhausted branch denied');
+  assert.strictEqual(a.reason, 'branch_cap');
+  assert.strictEqual(b.allowed, true, 'sibling branch unaffected');
 });
 
 test('cap of 0 means UNLIMITED — never blocks even with a huge count', () => {
@@ -185,7 +256,12 @@ test('checkAndAct: a denied governor SKIPS all write actions and logs skipped ro
   const db = require('../db');
   const loop = require('../worker/loop.js');
   db.getDb();
-  const id = db.insertAccount({ name: 'govwire', email: 'e@x.com', session_file: 's', target_page_url: 'u' });
+  // v2: target_page_url moved to branches; an account is the login envelope only.
+  // checkAndAct keys runtime STATE on the BRANCH (writeLastPostId → setLastPostId
+  // writes account_state(branch_id=account.id) under a branches FK), so the hydrated
+  // POJO's `.id` must be a real branch id — see the account POJO below.
+  const id = db.insertAccount({ name: 'govwire', email: 'e@x.com', session_file: 's' });
+  const branchId = db.insertBranch({ account_id: id, name: 'default', is_default: 1, target_page_url: 'u' });
 
   // A governor that always denies (cap reached) + a capturing logAction.
   const logged = [];
@@ -210,7 +286,8 @@ test('checkAndAct: a denied governor SKIPS all write actions and logs skipped ro
     async goto() {},
     keyboard: { async press() {} },
   };
-  const account = { id, name: 'govwire', dailyActionCap: 5, comments: ['c'], replies: ['r'], groups: [] };
+  // v2 hydrated branch: `.id` is the branch id (state/log key), accountId the login.
+  const account = { id: branchId, branchId, accountId: id, name: 'govwire', dailyActionCap: 5, accountDailyActionCap: 0, comments: ['c'], replies: ['r'], groups: [] };
 
   await loop.checkAndAct(fakePage, account, ctx);
 

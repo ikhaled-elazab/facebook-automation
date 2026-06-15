@@ -1,0 +1,21 @@
+{
+  "computed_at": "2026-06-15T14:15:53+00:00",
+  "min_count_threshold": 2,
+  "sample_size": 6,
+  "sessions_observed": 1,
+  "transitions": {
+    "challenger": {
+      "deep-planner": {
+        "count": 2,
+        "probability": 1.0
+      }
+    },
+    "database-expert": {
+      "challenger": {
+        "count": 2,
+        "probability": 1.0
+      }
+    }
+  },
+  "version": 1
+}

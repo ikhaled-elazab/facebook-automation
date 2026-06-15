@@ -1,0 +1,12 @@
+{
+  "last_run": "2026-06-15T14:15:53+00:00",
+  "stats": {
+    "agent_pairs_found": 0,
+    "duration_sec": 0.005,
+    "records_processed": 6,
+    "signal_pairs_found": 0,
+    "temporal_hours_covered": 1,
+    "topic_clusters_found": 2,
+    "transitions_found": 2
+  }
+}

@@ -68,15 +68,23 @@ function main() {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`[control-plane] ${signal} received, shutting down...`);
-    server.close((closeErr) => {
-      if (closeErr) console.error('[control-plane] error closing server:', closeErr.message);
-      try {
-        db.closeDb();
-      } catch (e) {
-        console.error('[control-plane] error closing DB:', e.message);
-      }
-      process.exit(closeErr ? 1 : 0);
-    });
+    // Abort any in-flight login flows FIRST so their browsers close cleanly and no
+    // chromium process tree is orphaned on exit (parity with the worker's HIGH-3
+    // shutdown discipline). Best-effort + bounded by the hard-exit timer below.
+    const loginControl = app.locals && app.locals.loginControl;
+    Promise.resolve(loginControl ? loginControl.abortAll() : undefined)
+      .catch((e) => console.error('[control-plane] error aborting login flows:', e.message))
+      .finally(() => {
+        server.close((closeErr) => {
+          if (closeErr) console.error('[control-plane] error closing server:', closeErr.message);
+          try {
+            db.closeDb();
+          } catch (e) {
+            console.error('[control-plane] error closing DB:', e.message);
+          }
+          process.exit(closeErr ? 1 : 0);
+        });
+      });
     // Hard exit if connections do not drain promptly.
     setTimeout(() => {
       console.error('[control-plane] forced exit after shutdown timeout.');

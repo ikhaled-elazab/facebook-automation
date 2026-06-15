@@ -107,9 +107,17 @@ test('migration is lossless (settings + account + children + state)', () => {
   const a = db.getAccountByName('acctA');
   assert.ok(a, 'account migrated');
   assert.strictEqual(a.email, 'a@x.com');
-  assert.strictEqual(a.check_interval_minutes, 5);
-  assert.strictEqual(a.send_dm_to_commenters, 1);
-  assert.strictEqual(a.dm_as_page_url, 'https://fb.com/page-identity');
+
+  // v2: the per-target fields + content live on the account's DEFAULT BRANCH that
+  // the importer creates (ensureDefaultBranch). The account row is the login
+  // envelope only — check_interval_minutes / send_dm_to_commenters / dm_as_page_url
+  // are branch columns now.
+  const branch = db.getDefaultBranch(a.id);
+  assert.ok(branch, 'a default branch was created for the account');
+  assert.strictEqual(branch.check_interval_minutes, 5);
+  assert.strictEqual(branch.send_dm_to_commenters, 1);
+  assert.strictEqual(branch.dm_as_page_url, 'https://fb.com/page-identity');
+  assert.strictEqual(branch.target_page_url, 'https://fb.com/pageA');
 
   // Password encrypted (not plaintext) and decryptable.
   assert.ok(a.password_enc && a.password_enc !== 'secretA', 'password stored encrypted');
@@ -117,23 +125,25 @@ test('migration is lossless (settings + account + children + state)', () => {
   assert.strictEqual(decrypt(a.password_enc), 'secretA', 'password decrypts losslessly');
   assert.strictEqual(decrypt(a.proxy_password_enc), 'ppw', 'proxy password encrypted+lossless');
 
-  assert.deepStrictEqual(db.getAccountComments(a.id), ['ca1', 'ca2']);
-  assert.deepStrictEqual(db.getAccountReplies(a.id), ['ra1']);
-  assert.deepStrictEqual(db.getAccountDmMessages(a.id), ['da1', 'da2', 'da3']);
-  assert.deepStrictEqual(db.getAccountGroups(a.id), [
+  // Content arrays migrated onto the default branch (branch-keyed in v2).
+  assert.deepStrictEqual(db.getBranchComments(branch.id), ['ca1', 'ca2']);
+  assert.deepStrictEqual(db.getBranchReplies(branch.id), ['ra1']);
+  assert.deepStrictEqual(db.getBranchDmMessages(branch.id), ['da1', 'da2', 'da3']);
+  assert.deepStrictEqual(db.getBranchGroups(branch.id), [
     'https://fb.com/groups/1',
     'https://fb.com/groups/2',
   ]);
 
-  assert.strictEqual(db.getAccountState(a.id).last_post_id, 'lastpost999');
-  assert.deepStrictEqual(db.getSharedPosts(a.id), ['https://fb.com/shared/1']);
-  assert.strictEqual(db.getDmSent(a.id).size, 2);
+  // Runtime state migrated onto the default branch (branch-keyed in v2).
+  assert.strictEqual(db.getBranchState(branch.id).last_post_id, 'lastpost999');
+  assert.deepStrictEqual(db.getSharedPosts(branch.id), ['https://fb.com/shared/1']);
+  assert.strictEqual(db.getDmSent(branch.id).size, 2);
 
-  // seen_comments preserved (under synthetic legacy: key)
+  // seen_comments preserved (keyed by branch_id under a synthetic legacy post key)
   const total = db
     .getDb()
-    .prepare('SELECT COUNT(*) AS n FROM seen_comments WHERE account_id = ?')
-    .get(a.id).n;
+    .prepare('SELECT COUNT(*) AS n FROM seen_comments WHERE branch_id = ?')
+    .get(branch.id).n;
   assert.strictEqual(total, 3, 'all seen-comment ids preserved');
 
   db.closeDb();
@@ -145,16 +155,20 @@ test('migration is idempotent (re-run yields same counts, no duplicates)', () =>
 
   const accounts = db.listAccounts();
   assert.strictEqual(accounts.length, 1, 'no duplicate account on re-run');
+  // Idempotent: the importer reuses the existing default branch (no duplicate).
+  const branches = db.listBranches({ accountId: accounts[0].id });
+  assert.strictEqual(branches.length, 1, 'no duplicate default branch on re-run');
 
   const a = db.getAccountByName('acctA');
-  assert.deepStrictEqual(db.getAccountComments(a.id), ['ca1', 'ca2'], 'children replaced, not doubled');
-  assert.deepStrictEqual(db.getAccountDmMessages(a.id), ['da1', 'da2', 'da3']);
+  const branch = db.getDefaultBranch(a.id);
+  assert.deepStrictEqual(db.getBranchComments(branch.id), ['ca1', 'ca2'], 'children replaced, not doubled');
+  assert.deepStrictEqual(db.getBranchDmMessages(branch.id), ['da1', 'da2', 'da3']);
 
-  assert.strictEqual(db.getDmSent(a.id).size, 2, 'dm_sent deduped on re-run');
+  assert.strictEqual(db.getDmSent(branch.id).size, 2, 'dm_sent deduped on re-run');
   const seen = db
     .getDb()
-    .prepare('SELECT COUNT(*) AS n FROM seen_comments WHERE account_id = ?')
-    .get(a.id).n;
+    .prepare('SELECT COUNT(*) AS n FROM seen_comments WHERE branch_id = ?')
+    .get(branch.id).n;
   assert.strictEqual(seen, 3, 'seen_comments deduped on re-run');
 
   db.closeDb();

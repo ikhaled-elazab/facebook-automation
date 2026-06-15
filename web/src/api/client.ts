@@ -5,11 +5,21 @@ import type {
   AccountResponse,
   AccountUpdateInput,
   AccountsListResponse,
-  AccountWithChildren,
+  Branch,
+  BranchCreateInput,
+  BranchResponse,
+  BranchUpdateInput,
+  BranchWithChildren,
+  BranchesListResponse,
   DeleteAccountResponse,
+  DeleteBranchResponse,
   EventsQuery,
   EventsResponse,
+  Login2faResponse,
+  LoginLaunchResponse,
   LoginResponse,
+  LoginSessionView,
+  LoginStatusResponse,
   MeResponse,
   Settings,
   SettingsResponse,
@@ -58,26 +68,105 @@ export const api = {
     },
   },
 
-  // ── Accounts ────────────────────────────────────────────────────────────--
+  // ── Accounts (v2: envelope only — targeting/content live on branches) ───────
   accounts: {
     list: (): Promise<Account[]> =>
       request<AccountsListResponse>('/api/accounts').then((r) => r.accounts),
 
-    get: (id: number): Promise<AccountWithChildren> =>
+    get: (id: number): Promise<Account> =>
       request<AccountResponse>(`/api/accounts/${id}`).then((r) => r.account),
 
-    create: (input: AccountCreateInput): Promise<AccountWithChildren> =>
+    create: (input: AccountCreateInput): Promise<Account> =>
       request<AccountResponse>('/api/accounts', { method: 'POST', body: input }).then(
         (r) => r.account
       ),
 
-    update: (id: number, patch: AccountUpdateInput): Promise<AccountWithChildren> =>
+    update: (id: number, patch: AccountUpdateInput): Promise<Account> =>
       request<AccountResponse>(`/api/accounts/${id}`, { method: 'PATCH', body: patch }).then(
         (r) => r.account
       ),
 
     remove: (id: number): Promise<DeleteAccountResponse> =>
       request<DeleteAccountResponse>(`/api/accounts/${id}`, { method: 'DELETE' }),
+  },
+
+  // ── Branches (v2: nested under an account) ──────────────────────────────────
+  //
+  // Routes mirror the account client one level deeper:
+  //   GET    /api/accounts/:accountId/branches               → list (no children)
+  //   GET    /api/accounts/:accountId/branches/:id           → one (with children)
+  //   POST   /api/accounts/:accountId/branches               → create
+  //   PATCH  /api/accounts/:accountId/branches/:id           → update (partial)
+  //   DELETE /api/accounts/:accountId/branches/:id           → delete
+  //   POST   /api/accounts/:accountId/branches/:id/default   → set as default
+  // The set-default endpoint enforces the exactly-one-default invariant server-side
+  // (it clears the prior default in the same transaction).
+  branches: {
+    list: (accountId: number): Promise<Branch[]> =>
+      request<BranchesListResponse>(`/api/accounts/${accountId}/branches`).then(
+        (r) => r.branches
+      ),
+
+    get: (accountId: number, branchId: number): Promise<BranchWithChildren> =>
+      request<BranchResponse>(`/api/accounts/${accountId}/branches/${branchId}`).then(
+        (r) => r.branch
+      ),
+
+    create: (accountId: number, input: BranchCreateInput): Promise<BranchWithChildren> =>
+      request<BranchResponse>(`/api/accounts/${accountId}/branches`, {
+        method: 'POST',
+        body: input,
+      }).then((r) => r.branch),
+
+    update: (
+      accountId: number,
+      branchId: number,
+      patch: BranchUpdateInput
+    ): Promise<BranchWithChildren> =>
+      request<BranchResponse>(`/api/accounts/${accountId}/branches/${branchId}`, {
+        method: 'PATCH',
+        body: patch,
+      }).then((r) => r.branch),
+
+    remove: (accountId: number, branchId: number): Promise<DeleteBranchResponse> =>
+      request<DeleteBranchResponse>(`/api/accounts/${accountId}/branches/${branchId}`, {
+        method: 'DELETE',
+      }),
+
+    setDefault: (accountId: number, branchId: number): Promise<BranchWithChildren> =>
+      request<BranchResponse>(`/api/accounts/${accountId}/branches/${branchId}/default`, {
+        method: 'POST',
+      }).then((r) => r.branch),
+  },
+
+  // ── Per-account login control (Model A) ─────────────────────────────────────
+  //
+  // Account-level Facebook login with mid-flow 2FA relay. Mirrors
+  // server/routes/login-control.js. Every endpoint wraps the public view under a
+  // `login` key ({ login: LoginSessionView }); these methods UNWRAP it so callers
+  // receive a bare LoginSessionView.
+  //   POST /api/accounts/:id/login        → launch (202 Accepted, treated as success)
+  //   GET  /api/accounts/:id/login/status → poll (running | needs_2fa)
+  //   POST /api/accounts/:id/login/2fa    → submit the 2FA code
+  // A concurrent launch returns 409 (one session per account) — the caller surfaces
+  // it via ApiError.isConflict. The stored password is never sent here; the server
+  // reads password_enc set via the account editor.
+  login: {
+    launch: (accountId: number): Promise<LoginSessionView> =>
+      request<LoginLaunchResponse>(`/api/accounts/${accountId}/login`, {
+        method: 'POST',
+      }).then((r) => r.login),
+
+    status: (accountId: number): Promise<LoginSessionView> =>
+      request<LoginStatusResponse>(`/api/accounts/${accountId}/login/status`).then(
+        (r) => r.login
+      ),
+
+    submit2fa: (accountId: number, code: string): Promise<LoginSessionView> =>
+      request<Login2faResponse>(`/api/accounts/${accountId}/login/2fa`, {
+        method: 'POST',
+        body: { code },
+      }).then((r) => r.login),
   },
 
   // ── Settings ──────────────────────────────────────────────────────────────

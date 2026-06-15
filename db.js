@@ -20,7 +20,7 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 let _db = null;
 
@@ -130,19 +130,18 @@ function insertAccount(fields) {
  * ARE allowed because the route encrypts plaintext into them; `id`/`created_at`
  * are never updatable.
  */
+// Phase 2: the 5 per-target columns (target_page_url, own_profile_url,
+// send_dm_to_commenters, dm_as_page_url, check_interval_minutes) MOVED to
+// branches and are NOT updatable here. daily_action_cap STAYS (per-account
+// ceiling). Branch-owned writable columns live on BRANCH_UPDATE_COLUMNS below.
 const ACCOUNT_UPDATE_COLUMNS = Object.freeze([
   'name',
   'email',
   'password_enc',
   'session_file',
-  'target_page_url',
-  'own_profile_url',
-  'send_dm_to_commenters',
-  'dm_as_page_url',
   'user_agent',
   'locale',
   'timezone_id',
-  'check_interval_minutes',
   'proxy_server',
   'proxy_username',
   'proxy_password_enc',
@@ -151,6 +150,26 @@ const ACCOUNT_UPDATE_COLUMNS = Object.freeze([
 ]);
 
 const ACCOUNT_UPDATE_SET = new Set(ACCOUNT_UPDATE_COLUMNS);
+
+/**
+ * Columns the control plane is permitted to UPDATE on branches. Same defense-in-
+ * depth contract as ACCOUNT_UPDATE_COLUMNS: a frozen allowlist gating the dynamic
+ * SET clause. `account_id` is never updatable (a branch cannot be re-parented),
+ * `is_default` is managed via a dedicated path (setDefaultBranch) to preserve the
+ * one-default-per-account invariant, and `id`/`created_at` are never updatable.
+ */
+const BRANCH_UPDATE_COLUMNS = Object.freeze([
+  'name',
+  'target_page_url',
+  'own_profile_url',
+  'send_dm_to_commenters',
+  'dm_as_page_url',
+  'check_interval_minutes',
+  'daily_action_cap',
+  'enabled',
+]);
+
+const BRANCH_UPDATE_SET = new Set(BRANCH_UPDATE_COLUMNS);
 
 /**
  * Update writable columns on an account. Always bumps updated_at.
@@ -197,82 +216,223 @@ function deleteAccount(accountId) {
   return info.changes > 0;
 }
 
-// ── Account child collections (comments/replies/dm_messages/groups) ──────────
+// ── Branches (1:N off accounts — the monitoring unit) ─────────────────────────
 
-function replaceChildText(table, accountId, items) {
+function getBranchById(branchId) {
+  return getDb().prepare(`SELECT * FROM branches WHERE id = ?`).get(branchId);
+}
+
+/**
+ * List branches, optionally scoped to one account and/or only enabled rows.
+ * @param {{accountId?: number, enabledOnly?: boolean}} [opts]
+ * @returns {Array<Record<string, unknown>>} ordered by (account_id, id)
+ */
+function listBranches({ accountId, enabledOnly = false } = {}) {
+  const where = [];
+  const params = [];
+  if (accountId !== undefined && accountId !== null) {
+    where.push('account_id = ?');
+    params.push(accountId);
+  }
+  if (enabledOnly) where.push('enabled = 1');
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  return getDb()
+    .prepare(`SELECT * FROM branches ${whereSql} ORDER BY account_id, id`)
+    .all(...params);
+}
+
+/**
+ * Count branches grouped by owning account, in a SINGLE query. Returns a Map of
+ * account_id -> branch count. Accounts with zero branches are simply absent from
+ * the map (the caller defaults them to 0). This backs the accounts LIST endpoint
+ * so it can emit branch_count without N per-account queries (the list is the hot
+ * path); single-account routes use listBranches({accountId}).length instead.
+ * @returns {Map<number, number>}
+ */
+function countBranchesByAccount() {
+  const rows = getDb()
+    .prepare(`SELECT account_id, COUNT(*) AS n FROM branches GROUP BY account_id`)
+    .all();
+  const map = new Map();
+  for (const r of rows) map.set(r.account_id, r.n);
+  return map;
+}
+
+/** The default (is_default=1) branch for an account, or undefined. */
+function getDefaultBranch(accountId) {
+  return getDb()
+    .prepare(`SELECT * FROM branches WHERE account_id = ? AND is_default = 1`)
+    .get(accountId);
+}
+
+/**
+ * Insert a branch row. `fields` keys map to columns directly; account_id + name
+ * are required. Returns the new branch id. (The control plane should validate
+ * inputs upstream; this is the low-level writer.)
+ * @param {Record<string, unknown>} fields
+ * @returns {number} new branch id
+ */
+function insertBranch(fields) {
+  const cols = Object.keys(fields);
+  const placeholders = cols.map((c) => `@${c}`).join(', ');
+  const info = getDb()
+    .prepare(`INSERT INTO branches (${cols.join(', ')}) VALUES (${placeholders})`)
+    .run(fields);
+  return info.lastInsertRowid;
+}
+
+/**
+ * Update writable columns on a branch (frozen BRANCH_UPDATE_COLUMNS allowlist —
+ * same defense-in-depth contract as updateAccount). Always bumps updated_at.
+ * @param {number} branchId
+ * @param {Record<string, unknown>} columns already-validated column->value map
+ * @returns {boolean} true if a row was updated
+ * @throws {Error} if any column is outside the allowlist (programming error)
+ */
+function updateBranch(branchId, columns) {
+  const keys = Object.keys(columns).filter((k) => BRANCH_UPDATE_SET.has(k));
+  const rejected = Object.keys(columns).filter((k) => !BRANCH_UPDATE_SET.has(k));
+  if (rejected.length > 0) {
+    throw new Error(`updateBranch: disallowed column(s): ${rejected.join(', ')}`);
+  }
+  if (keys.length === 0) return false;
+
+  const assignments = keys.map((k) => `${k} = @${k}`).join(', ');
+  const params = {};
+  for (const k of keys) params[k] = columns[k];
+  params.id = branchId;
+
+  const info = getDb()
+    .prepare(`UPDATE branches SET ${assignments}, updated_at = datetime('now') WHERE id = @id`)
+    .run(params);
+  return info.changes > 0;
+}
+
+/**
+ * Delete a branch. Child + state rows cascade. GUARD: refuses to delete the
+ * is_default=1 branch (every account must always retain its default branch — a
+ * deleted default would orphan the account's monitoring + violate the seed
+ * invariant). Promote another branch to default first if you must remove it.
+ * @param {number} branchId
+ * @returns {boolean} true if a row was deleted
+ * @throws {Error} if the branch is the account's default branch
+ */
+function deleteBranch(branchId) {
+  const row = getBranchById(branchId);
+  if (!row) return false;
+  if (row.is_default) {
+    throw new Error(
+      `deleteBranch: branch ${branchId} is the account's default branch — promote ` +
+        `another branch to default before deleting it.`
+    );
+  }
+  const info = getDb().prepare(`DELETE FROM branches WHERE id = ?`).run(branchId);
+  return info.changes > 0;
+}
+
+/**
+ * Atomically make `branchId` the sole default for its account: clear the current
+ * default, set this one. Wrapped in a transaction so the partial unique index
+ * (uq_branches_one_default_per_account) is never transiently violated.
+ * @param {number} branchId
+ * @returns {boolean} true if the branch was promoted
+ * @throws {Error} if the branch does not exist
+ */
+function setDefaultBranch(branchId) {
+  const conn = getDb();
+  const row = getBranchById(branchId);
+  if (!row) throw new Error(`setDefaultBranch: branch ${branchId} not found`);
+  const tx = conn.transaction(() => {
+    conn
+      .prepare(
+        `UPDATE branches SET is_default = 0, updated_at = datetime('now')
+         WHERE account_id = ? AND is_default = 1 AND id != ?`
+      )
+      .run(row.account_id, branchId);
+    conn
+      .prepare(`UPDATE branches SET is_default = 1, updated_at = datetime('now') WHERE id = ?`)
+      .run(branchId);
+  });
+  tx();
+  return true;
+}
+
+// ── Branch child collections (comments/replies/dm_messages/groups) ───────────
+
+function replaceChildText(table, branchId, items) {
   const db = getDb();
-  db.prepare(`DELETE FROM ${table} WHERE account_id = ?`).run(accountId);
+  db.prepare(`DELETE FROM ${table} WHERE branch_id = ?`).run(branchId);
   const ins = db.prepare(
-    `INSERT INTO ${table} (account_id, text, position) VALUES (?, ?, ?)`
+    `INSERT INTO ${table} (branch_id, text, position) VALUES (?, ?, ?)`
   );
   const tx = db.transaction((rows) => {
-    rows.forEach((text, i) => ins.run(accountId, text, i));
+    rows.forEach((text, i) => ins.run(branchId, text, i));
   });
   tx(items || []);
 }
 
-function setAccountComments(accountId, items) {
-  replaceChildText('account_comments', accountId, items);
+function setBranchComments(branchId, items) {
+  replaceChildText('account_comments', branchId, items);
 }
-function setAccountReplies(accountId, items) {
-  replaceChildText('account_replies', accountId, items);
+function setBranchReplies(branchId, items) {
+  replaceChildText('account_replies', branchId, items);
 }
-function setAccountDmMessages(accountId, items) {
-  replaceChildText('account_dm_messages', accountId, items);
+function setBranchDmMessages(branchId, items) {
+  replaceChildText('account_dm_messages', branchId, items);
 }
-function setAccountGroups(accountId, urls) {
+function setBranchGroups(branchId, urls) {
   const db = getDb();
-  db.prepare(`DELETE FROM account_groups WHERE account_id = ?`).run(accountId);
+  db.prepare(`DELETE FROM account_groups WHERE branch_id = ?`).run(branchId);
   const ins = db.prepare(
-    `INSERT INTO account_groups (account_id, url, position) VALUES (?, ?, ?)`
+    `INSERT INTO account_groups (branch_id, url, position) VALUES (?, ?, ?)`
   );
   const tx = db.transaction((rows) => {
-    rows.forEach((url, i) => ins.run(accountId, url, i));
+    rows.forEach((url, i) => ins.run(branchId, url, i));
   });
   tx(urls || []);
 }
 
-function getAccountChildText(table, accountId) {
+function getBranchChildText(table, branchId) {
   return getDb()
-    .prepare(`SELECT text FROM ${table} WHERE account_id = ? ORDER BY position`)
-    .all(accountId)
+    .prepare(`SELECT text FROM ${table} WHERE branch_id = ? ORDER BY position`)
+    .all(branchId)
     .map((r) => r.text);
 }
-function getAccountComments(accountId) {
-  return getAccountChildText('account_comments', accountId);
+function getBranchComments(branchId) {
+  return getBranchChildText('account_comments', branchId);
 }
-function getAccountReplies(accountId) {
-  return getAccountChildText('account_replies', accountId);
+function getBranchReplies(branchId) {
+  return getBranchChildText('account_replies', branchId);
 }
-function getAccountDmMessages(accountId) {
-  return getAccountChildText('account_dm_messages', accountId);
+function getBranchDmMessages(branchId) {
+  return getBranchChildText('account_dm_messages', branchId);
 }
-function getAccountGroups(accountId) {
+function getBranchGroups(branchId) {
   return getDb()
-    .prepare(`SELECT url FROM account_groups WHERE account_id = ? ORDER BY position`)
-    .all(accountId)
+    .prepare(`SELECT url FROM account_groups WHERE branch_id = ? ORDER BY position`)
+    .all(branchId)
     .map((r) => r.url);
 }
 
-// ── Runtime state ────────────────────────────────────────────────────────────
+// ── Runtime state (keyed by branch_id since Phase 2) ─────────────────────────
 
-function getAccountState(accountId) {
-  return getDb().prepare(`SELECT * FROM account_state WHERE account_id = ?`).get(accountId);
+function getBranchState(branchId) {
+  return getDb().prepare(`SELECT * FROM account_state WHERE branch_id = ?`).get(branchId);
 }
 
-function setLastPostId(accountId, lastPostId) {
+function setLastPostId(branchId, lastPostId) {
   getDb()
     .prepare(
-      `INSERT INTO account_state (account_id, last_post_id, updated_at)
-       VALUES (@account_id, @last_post_id, datetime('now'))
-       ON CONFLICT(account_id) DO UPDATE SET
+      `INSERT INTO account_state (branch_id, last_post_id, updated_at)
+       VALUES (@branch_id, @last_post_id, datetime('now'))
+       ON CONFLICT(branch_id) DO UPDATE SET
          last_post_id = @last_post_id, updated_at = datetime('now')`
     )
-    .run({ account_id: accountId, last_post_id: lastPostId });
+    .run({ branch_id: branchId, last_post_id: lastPostId });
 }
 
-function getSharedPosts(accountId) {
-  const row = getAccountState(accountId);
+function getSharedPosts(branchId) {
+  const row = getBranchState(branchId);
   if (!row || !row.shared_posts) return [];
   try {
     return JSON.parse(row.shared_posts);
@@ -281,62 +441,78 @@ function getSharedPosts(accountId) {
   }
 }
 
-function setSharedPosts(accountId, urls) {
+function setSharedPosts(branchId, urls) {
   getDb()
     .prepare(
-      `INSERT INTO account_state (account_id, shared_posts, updated_at)
-       VALUES (@account_id, @shared_posts, datetime('now'))
-       ON CONFLICT(account_id) DO UPDATE SET
+      `INSERT INTO account_state (branch_id, shared_posts, updated_at)
+       VALUES (@branch_id, @shared_posts, datetime('now'))
+       ON CONFLICT(branch_id) DO UPDATE SET
          shared_posts = @shared_posts, updated_at = datetime('now')`
     )
-    .run({ account_id: accountId, shared_posts: JSON.stringify(urls || []) });
+    .run({ branch_id: branchId, shared_posts: JSON.stringify(urls || []) });
 }
 
-// ── seen_comments ────────────────────────────────────────────────────────────
+// ── seen_comments (keyed by branch_id since Phase 2) ─────────────────────────
 
-function getSeenComments(accountId, postUrl) {
+function getSeenComments(branchId, postUrl) {
   const rows = getDb()
-    .prepare(`SELECT comment_id FROM seen_comments WHERE account_id = ? AND post_url = ?`)
-    .all(accountId, postUrl);
+    .prepare(`SELECT comment_id FROM seen_comments WHERE branch_id = ? AND post_url = ?`)
+    .all(branchId, postUrl);
   return new Set(rows.map((r) => r.comment_id));
 }
 
-function addSeenComment(accountId, postUrl, commentId) {
+function addSeenComment(branchId, postUrl, commentId) {
   getDb()
     .prepare(
-      `INSERT INTO seen_comments (account_id, post_url, comment_id) VALUES (?, ?, ?)
-       ON CONFLICT(account_id, post_url, comment_id) DO NOTHING`
+      `INSERT INTO seen_comments (branch_id, post_url, comment_id) VALUES (?, ?, ?)
+       ON CONFLICT(branch_id, post_url, comment_id) DO NOTHING`
     )
-    .run(accountId, postUrl, commentId);
+    .run(branchId, postUrl, commentId);
 }
 
-// ── dm_sent ──────────────────────────────────────────────────────────────────
+// ── dm_sent (keyed by branch_id since Phase 2) ───────────────────────────────
 
-function getDmSent(accountId) {
+function getDmSent(branchId) {
   const rows = getDb()
-    .prepare(`SELECT profile_url FROM dm_sent WHERE account_id = ?`)
-    .all(accountId);
+    .prepare(`SELECT profile_url FROM dm_sent WHERE branch_id = ?`)
+    .all(branchId);
   return new Set(rows.map((r) => r.profile_url));
 }
 
-function addDmSent(accountId, profileUrl) {
+function addDmSent(branchId, profileUrl) {
   getDb()
     .prepare(
-      `INSERT INTO dm_sent (account_id, profile_url) VALUES (?, ?)
-       ON CONFLICT(account_id, profile_url) DO NOTHING`
+      `INSERT INTO dm_sent (branch_id, profile_url) VALUES (?, ?)
+       ON CONFLICT(branch_id, profile_url) DO NOTHING`
     )
-    .run(accountId, profileUrl);
+    .run(branchId, profileUrl);
 }
 
 // ── action_log (feeds P5 governor + UI events) ───────────────────────────────
 
-function logAction({ accountId = null, actionType, targetUrl = null, status = 'ok', detail = null }) {
+/**
+ * Append an action_log row. Phase 2: carries BOTH branchId (the monitoring unit,
+ * for the per-branch cap + UI drill-down) and accountId (the login, for the
+ * per-account ceiling sum). Either may be null. When only branchId is supplied we
+ * resolve its owning accountId so the per-account ceiling stays accurate without
+ * the caller having to thread both — and vice-versa is left to the caller.
+ * @param {{branchId?: number|null, accountId?: number|null, actionType: string,
+ *   targetUrl?: string|null, status?: string, detail?: string|null}} entry
+ */
+function logAction({ branchId = null, accountId = null, actionType, targetUrl = null, status = 'ok', detail = null }) {
+  let acct = accountId;
+  // If the caller gave a branch but no account, resolve the owning account so the
+  // per-account ceiling count (which sums across the account's branches) is whole.
+  if ((acct === null || acct === undefined) && branchId !== null && branchId !== undefined) {
+    const b = getBranchById(branchId);
+    if (b) acct = b.account_id;
+  }
   getDb()
     .prepare(
-      `INSERT INTO action_log (account_id, action_type, target_url, status, detail)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO action_log (account_id, branch_id, action_type, target_url, status, detail)
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
-    .run(accountId, actionType, targetUrl, status, detail);
+    .run(acct ?? null, branchId ?? null, actionType, targetUrl, status, detail);
 }
 
 // Local-day window bounds, expressed back in UTC so they compare directly
@@ -359,6 +535,11 @@ const LOCAL_DAY_END_UTC = `datetime('now','localtime','start of day','+1 day','u
  * The query is sargable (created_at appears bare against index-friendly bounds):
  *   - with accountId → uses idx_action_log_acct_day (account_id, created_at)
  *   - global         → uses idx_action_log_created (created_at)
+ *
+ * Phase 2: this remains the per-ACCOUNT-ceiling / global tier. The per-BRANCH
+ * tier is countBranchActionsToday(branchId) below (uses idx_action_log_branch_day).
+ * The per-account count sums across ALL the account's branches because every
+ * action_log row carries the owning account_id (resolved in logAction).
  *
  * DST CAVEAT: the local-day→UTC window (datetime('now','localtime','start of
  * day','utc')) is computed at query time using the CURRENT offset. On a DST-
@@ -396,6 +577,27 @@ function countActionsToday(accountId) {
 }
 
 /**
+ * Count today's successful (status='ok') actions for a single BRANCH — the
+ * per-branch cap tier of the three-tier hierarchy. Sargable against
+ * idx_action_log_branch_day (branch_id, created_at). Same local-day basis and DST
+ * caveat as countActionsToday.
+ * @param {number} branchId branch to scope to (required)
+ * @returns {number} today's ok-action count for the branch
+ */
+function countBranchActionsToday(branchId) {
+  if (branchId === undefined || branchId === null) return 0;
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS n FROM action_log
+       WHERE branch_id = ? AND status = 'ok'
+         AND created_at >= ${LOCAL_DAY_START_UTC}
+         AND created_at <  ${LOCAL_DAY_END_UTC}`
+    )
+    .get(branchId);
+  return row ? row.n : 0;
+}
+
+/**
  * Delete action_log rows older than `days` days (retention — prevents unbounded
  * growth, which would otherwise compound the cost of the daily-cap index scans).
  * The cutoff is bare-comparable against the UTC-stored created_at and is a fixed
@@ -423,12 +625,17 @@ function trimActionLog(days = 30) {
  * without a second COUNT, then also return the unfiltered `total` so the UI can
  * show "N events" and decide whether older pages exist.
  *
- * @param {{limit?:number, accountId?:number, before?:number}} [opts]
+ * Phase 2: an optional `branchId` filter drills the feed down to one branch
+ * (additive — `accountId` still works and is the broader scope). The row shape
+ * now also carries branch_id so the UI can label which branch an event came from.
+ *
+ * @param {{limit?:number, accountId?:number, branchId?:number, before?:number}} [opts]
  * @returns {{events:Array<Record<string, unknown>>, total:number, has_more:boolean, next_before:number|null}}
  */
-function recentActions({ limit = 50, accountId, before } = {}) {
+function recentActions({ limit = 50, accountId, branchId, before } = {}) {
   const conn = getDb();
   const hasAccount = accountId !== undefined && accountId !== null;
+  const hasBranch = branchId !== undefined && branchId !== null;
   const hasBefore = before !== undefined && before !== null;
 
   // Build the WHERE clause from fixed fragments only; all values bind as params.
@@ -437,6 +644,10 @@ function recentActions({ limit = 50, accountId, before } = {}) {
   if (hasAccount) {
     where.push('account_id = ?');
     params.push(accountId);
+  }
+  if (hasBranch) {
+    where.push('branch_id = ?');
+    params.push(branchId);
   }
   if (hasBefore) {
     where.push('id < ?');
@@ -447,7 +658,7 @@ function recentActions({ limit = 50, accountId, before } = {}) {
   // Over-fetch one row to detect a further page without a second query.
   const pageRows = conn
     .prepare(
-      `SELECT id, account_id, action_type, target_url, status, detail, created_at
+      `SELECT id, account_id, branch_id, action_type, target_url, status, detail, created_at
        FROM action_log ${whereSql} ORDER BY id DESC LIMIT ?`
     )
     .all(...params, limit + 1);
@@ -456,12 +667,21 @@ function recentActions({ limit = 50, accountId, before } = {}) {
   const events = has_more ? pageRows.slice(0, limit) : pageRows;
   const next_before = has_more ? events[events.length - 1].id : null;
 
-  // total is scoped to the account filter (if any) but ignores the cursor — it is
-  // the size of the whole feed the UI is paging through, not just this page.
-  const totalWhere = hasAccount ? 'WHERE account_id = ?' : '';
-  const totalParams = hasAccount ? [accountId] : [];
+  // total is scoped to the same account/branch filter (if any) but ignores the
+  // cursor — it is the size of the whole feed the UI is paging through.
+  const totalWhere = [];
+  const totalParams = [];
+  if (hasAccount) {
+    totalWhere.push('account_id = ?');
+    totalParams.push(accountId);
+  }
+  if (hasBranch) {
+    totalWhere.push('branch_id = ?');
+    totalParams.push(branchId);
+  }
+  const totalWhereSql = totalWhere.length ? `WHERE ${totalWhere.join(' AND ')}` : '';
   const totalRow = conn
-    .prepare(`SELECT COUNT(*) AS n FROM action_log ${totalWhere}`)
+    .prepare(`SELECT COUNT(*) AS n FROM action_log ${totalWhereSql}`)
     .get(...totalParams);
 
   return {
@@ -493,51 +713,54 @@ function heartbeat(status, detail = null) {
     .run(status, detail);
 }
 
-// ── account_status (per-account cycle status — fixes single-row heartbeat) ────
+// ── account_status (per-BRANCH cycle status — fixes single-row heartbeat) ─────
 
 /**
- * Record a single account's last cycle status. Upserts ONE row per account, so
- * account B's 'error' is never clobbered by account A's 'running' (the single
+ * Record a single BRANCH's last cycle status. Upserts ONE row per branch, so
+ * branch B's 'error' is never clobbered by branch A's 'running' (the single
  * worker_state row keeps the global process-liveness contract; this gives
- * per-account observability the dashboard's per-account summary surfaces).
+ * per-branch observability the dashboard's per-branch summary surfaces).
  * `last_cycle_at` is bumped only on terminal cycle outcomes (ok|error), not on
  * the transient 'running' marker, so it reflects the last COMPLETED cycle.
- * @param {number} accountId
+ *
+ * Phase 2: keyed by branch_id (was account_id). The function name is preserved
+ * (setBranchStatus is the alias) so callers can migrate at their own pace.
+ * @param {number} branchId
  * @param {string} status idle | running | ok | error | paused
  * @param {string|null} [detail]
  */
-function setAccountStatus(accountId, status, detail = null) {
+function setBranchStatus(branchId, status, detail = null) {
   const bumpCycle = status === 'ok' || status === 'error';
   getDb()
     .prepare(
-      `INSERT INTO account_status (account_id, status, detail, last_cycle_at, updated_at)
-       VALUES (@account_id, @status, @detail,
+      `INSERT INTO account_status (branch_id, status, detail, last_cycle_at, updated_at)
+       VALUES (@branch_id, @status, @detail,
                CASE WHEN @bump = 1 THEN datetime('now') ELSE NULL END,
                datetime('now'))
-       ON CONFLICT(account_id) DO UPDATE SET
+       ON CONFLICT(branch_id) DO UPDATE SET
          status = @status,
          detail = @detail,
          last_cycle_at = CASE WHEN @bump = 1 THEN datetime('now') ELSE last_cycle_at END,
          updated_at = datetime('now')`
     )
-    .run({ account_id: accountId, status, detail, bump: bumpCycle ? 1 : 0 });
+    .run({ branch_id: branchId, status, detail, bump: bumpCycle ? 1 : 0 });
 }
 
 /**
- * Read one account's status row (or undefined if the account has never run).
- * @param {number} accountId
+ * Read one branch's status row (or undefined if the branch has never run).
+ * @param {number} branchId
  * @returns {Record<string, unknown>|undefined}
  */
-function getAccountStatus(accountId) {
-  return getDb().prepare(`SELECT * FROM account_status WHERE account_id = ?`).get(accountId);
+function getBranchStatus(branchId) {
+  return getDb().prepare(`SELECT * FROM account_status WHERE branch_id = ?`).get(branchId);
 }
 
 /**
- * Read all per-account status rows (for the dashboard per-account summary).
+ * Read all per-branch status rows (for the dashboard per-branch summary).
  * @returns {Array<Record<string, unknown>>}
  */
-function listAccountStatuses() {
-  return getDb().prepare(`SELECT * FROM account_status ORDER BY account_id`).all();
+function listBranchStatuses() {
+  return getDb().prepare(`SELECT * FROM account_status ORDER BY branch_id`).all();
 }
 
 module.exports = {
@@ -556,17 +779,27 @@ module.exports = {
   updateAccount,
   deleteAccount,
   ACCOUNT_UPDATE_COLUMNS,
-  // children
-  setAccountComments,
-  setAccountReplies,
-  setAccountDmMessages,
-  setAccountGroups,
-  getAccountComments,
-  getAccountReplies,
-  getAccountDmMessages,
-  getAccountGroups,
-  // state
-  getAccountState,
+  // branches
+  getBranchById,
+  listBranches,
+  countBranchesByAccount,
+  getDefaultBranch,
+  insertBranch,
+  updateBranch,
+  deleteBranch,
+  setDefaultBranch,
+  BRANCH_UPDATE_COLUMNS,
+  // branch children
+  setBranchComments,
+  setBranchReplies,
+  setBranchDmMessages,
+  setBranchGroups,
+  getBranchComments,
+  getBranchReplies,
+  getBranchDmMessages,
+  getBranchGroups,
+  // branch state
+  getBranchState,
   setLastPostId,
   getSharedPosts,
   setSharedPosts,
@@ -577,14 +810,15 @@ module.exports = {
   // action log
   logAction,
   countActionsToday,
+  countBranchActionsToday,
   trimActionLog,
   recentActions,
   // worker state
   getWorkerState,
   setDesiredState,
   heartbeat,
-  // per-account status
-  setAccountStatus,
-  getAccountStatus,
-  listAccountStatuses,
+  // per-branch status
+  setBranchStatus,
+  getBranchStatus,
+  listBranchStatuses,
 };

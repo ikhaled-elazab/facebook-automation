@@ -37,10 +37,15 @@ const SETTINGS_DM_ON = { enable_dm_to_commenters: 1 };
 const H = { randomDelay: async () => {}, pickRandom: (a) => a[0], typeText: async () => {} };
 
 let accountId;
+let branchId;
 
 before(() => {
   db.getDb();
-  accountId = db.insertAccount({ name: 'dmtest', email: 'e@x.com', session_file: 's', target_page_url: 'u' });
+  // v2: target_page_url moved to branches; an account is the login envelope only.
+  // These no-op tests pass a POJO branch object to sendDmToUser (not a DB row), so
+  // the seed exists purely to give db.addDmSent a real branch FK target below.
+  accountId = db.insertAccount({ name: 'dmtest', email: 'e@x.com', session_file: 's' });
+  branchId = db.insertBranch({ account_id: accountId, name: 'default', is_default: 1, target_page_url: 'u' });
 });
 
 after(() => {
@@ -48,10 +53,12 @@ after(() => {
   fs.rmSync(TMP_DIR, { recursive: true, force: true });
 });
 
-/** A base account configured to DM. The page is never reached by the no-op tests. */
+/** A base branch configured to DM. The page is never reached by the no-op tests.
+ *  v2: the monitoring unit is a BRANCH; its `.id` is the branch id (the dm_sent
+ *  dedupe key), so the POJO carries branchId as `.id` to match core/state.js. */
 function dmAccount(extra = {}) {
   return {
-    id: accountId,
+    id: branchId,
     name: 'dmtest',
     sendDmToCommenters: true,
     dmMessages: ['hello'],
@@ -90,7 +97,7 @@ test("sendDmToUser returns {sent:false, reason:'deduped'} for an already-DM'd pr
   // sendDmToUser AND addDmSent stores the raw url; seed via the same helper path
   // the function reads (readDmSent → db.getDmSent) using the cleaned form.
   const { cleanFbUrl } = require('../core/state.js');
-  db.addDmSent(accountId, cleanFbUrl(target));
+  db.addDmSent(branchId, cleanFbUrl(target));
 
   const res = await sendDmToUser(null, dmAccount(), target, SETTINGS_DM_ON, H);
   assert.strictEqual(res.sent, false, "a deduped DM must NOT report sent:true");

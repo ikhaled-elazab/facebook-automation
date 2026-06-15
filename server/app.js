@@ -35,6 +35,9 @@ const { requireAuth } = require('./auth/middleware');
 const { loginRateLimiter } = require('./auth/rate-limit');
 const { authRouter } = require('./routes/auth');
 const { accountsRouter } = require('./routes/accounts');
+const { loginControlRouter } = require('./routes/login-control');
+const { createLoginControl } = require('./login-control');
+const { branchesRouter } = require('./routes/branches');
 const { settingsRouter } = require('./routes/settings');
 const { workerRouter } = require('./routes/worker');
 const { statusRouter } = require('./routes/status');
@@ -183,6 +186,23 @@ function createApp(config, opts = {}) {
   app.use('/api', requireAuth);
 
   app.use('/api/accounts', accountsRouter({ csrfProtection: doubleCsrfProtection }));
+  // Account-level login control (Phase 3.5). Mounted at /api/accounts so it owns
+  // /api/accounts/:id/login[/status|/2fa]. Mounted AFTER accountsRouter — the
+  // account item routes (/:id) match a SINGLE segment, so the two-segment
+  // /api/accounts/:id/login paths fall through to here. The registry is injectable
+  // (undefined in prod -> a real in-process registry created here) and exposed on
+  // app.locals so graceful shutdown can abort in-flight login flows (no orphaned
+  // chromium). A SINGLE registry instance is shared by every login route so a
+  // launch and its later /2fa land on the same paused in-process session.
+  const loginControl = opts.loginControl || createLoginControl({ logger });
+  app.locals.loginControl = loginControl;
+  app.use('/api/accounts', loginControlRouter({ csrfProtection: doubleCsrfProtection, loginControl }));
+  // Branch CRUD is mounted at /api so it can own BOTH the account-scoped collection
+  // (/api/accounts/:accountId/branches) and the branch-scoped item ops
+  // (/api/branches/:id[/default]). It is registered AFTER accountsRouter so the
+  // single-segment account routes (/api/accounts/:id) keep precedence — Express
+  // `/:id` matches one segment, so `/api/accounts/5/branches` falls through to here.
+  app.use('/api', branchesRouter({ csrfProtection: doubleCsrfProtection }));
   app.use('/api/settings', settingsRouter({ csrfProtection: doubleCsrfProtection }));
   app.use(
     '/api/worker',

@@ -10,3 +10,6 @@ CTO/Orchestrator routes to the target agent.
 ---
 
 <!-- Entries below this line — append new entries -->
+- (2026-06-15, from=elite-engineer, session=multibranch-design) frontend-platform-engineer + api-expert: server/routes/accounts.js + server/routes/status.js still call REMOVED v1 accessors (setAccountComments, getAccountState, listAccountStatuses) and insert DROPPED columns (target_page_url on accounts) -> they 500 under v2. Phase 3 must re-key to branch accessors + add branch CRUD endpoints (db.insertBranch/updateBranch/deleteBranch/setDefaultBranch + BRANCH_UPDATE_COLUMNS ready). LIVE MIGRATION BLOCKED until server layer re-keyed.
+- (2026-06-15, from=elite-engineer, session=multibranch-design) test-engineer: ~51 existing tests need v1->v2 migration (renamed accessors, three-tier governor semantics, hydrateAccount->hydrateBranch, v1 column inserts). test/migration-v2.test.js is the reference for the v2 shape.
+- (2026-06-15, from=elite-engineer, session=multibranch-design) database-expert: live db/fb-bot.db is still v1; real v1->v2 migration must run with worker+control-plane STOPPED (BLOCKING-2 pre-flight enforces); user is acceptance gate for the live run.

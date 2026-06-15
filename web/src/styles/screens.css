@@ -371,3 +371,157 @@
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
+
+/* ══ Branch manager (master list + detail editor) ═══════════════════════════ */
+.branch-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  align-items: start;
+  min-height: 0;
+}
+@media (max-width: 880px) {
+  .branch-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Master list */
+.branch-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border-right: var(--border-width) solid var(--border-subtle);
+}
+@media (max-width: 880px) {
+  .branch-list {
+    border-right: none;
+    border-bottom: var(--border-width) solid var(--border-subtle);
+  }
+}
+.branch-list__item {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+  border-radius: var(--radius-md);
+}
+.branch-list__item.is-selected {
+  background: var(--accent-ghost);
+}
+.branch-list__select {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-primary);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.branch-list__select:hover {
+  background: var(--bg-hover);
+}
+.branch-list__item.is-selected .branch-list__select:hover {
+  background: var(--accent-ghost-strong);
+}
+.branch-list__select:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.branch-list__name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.branch-list__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.branch-list__actions {
+  display: flex;
+  align-items: center;
+  padding-right: var(--space-1);
+}
+
+/* Detail editor */
+.branch-detail {
+  padding: var(--space-5);
+  min-width: 0;
+}
+.branch-detail__placeholder {
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+.branch-detail__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+.branch-detail__title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 650;
+}
+.branch-detail__default-note {
+  font-size: var(--text-xs);
+  color: var(--accent);
+}
+.branch-detail .editor-bar {
+  position: static;
+  margin-top: var(--space-5);
+  padding-left: 0;
+  padding-right: 0;
+  background: transparent;
+  backdrop-filter: none;
+  border-radius: 0;
+}
+
+/* ── Per-account login control (AccountsScreen "Login" column) ──────────────── */
+.login-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.login-cell__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.login-cell__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+.login-cell__detail {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  max-width: 28ch;
+}
+.login-cell__detail--error {
+  color: var(--danger);
+}
+.login-cell__twofa {
+  margin-top: var(--space-1);
+  max-width: 22rem;
+}

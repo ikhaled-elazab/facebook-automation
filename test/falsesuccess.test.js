@@ -45,10 +45,19 @@ const fakePage = {
 };
 
 let accountId;
+let branchId;
 
 before(() => {
   db.getDb();
-  accountId = db.insertAccount({ name: 'falsetest', email: 'e@x.com', session_file: 's', target_page_url: 'u' });
+  // v2: target_page_url moved to branches; an account is the login envelope only.
+  // checkAndAct keys runtime STATE + action_log on the BRANCH (the monitoring
+  // unit): writeLastPostId(account) → db.setLastPostId(account.id) writes
+  // account_state(branch_id=account.id), which has a FK to branches. So the hydrated
+  // POJO's `.id` must be a real BRANCH id (not the account id), or the state write
+  // FK-fails and the whole cycle is swallowed by checkAndAct's try/catch (logging
+  // zero actions). We seed both an account and its default branch below.
+  accountId = db.insertAccount({ name: 'falsetest', email: 'e@x.com', session_file: 's' });
+  branchId = db.insertBranch({ account_id: accountId, name: 'default', is_default: 1, target_page_url: 'u' });
 });
 
 after(() => {
@@ -79,10 +88,16 @@ function makeCtx(writeResult) {
   return { ctx, logged };
 }
 
+// v2 hydrated branch shape: `.id` is the BRANCH id (state/log key), `accountId`
+// is the owning login, `dailyActionCap` (branch) + `accountDailyActionCap`
+// (ceiling) both 0 = unlimited so the always-allow governor never blocks on a cap.
 const ACCOUNT = () => ({
-  id: accountId,
+  id: branchId,
+  branchId,
+  accountId,
   name: 'falsetest',
-  dailyActionCap: 0, // unlimited so the governor never blocks on the cap
+  dailyActionCap: 0, // branch cap: unlimited
+  accountDailyActionCap: 0, // account ceiling: unlimited
   comments: ['c'],
   replies: ['r'],
   groups: [],
@@ -111,10 +126,14 @@ test("governed(): a FAILED action (withRetry → RETRY_FAILED) logs 'failed', no
 });
 
 test("countActionsToday does NOT count 'failed' rows toward the cap", async () => {
-  // Fresh account so the count starts at 0.
-  const id = db.insertAccount({ name: 'failcount', email: 'e2@x.com', session_file: 's', target_page_url: 'u' });
+  // Fresh account + its default branch so the count starts at 0 AND the branch-keyed
+  // state write inside checkAndAct has a valid FK target. The POJO's `.id` is the
+  // branch id (state/log key); the direct db.logAction below uses the account id
+  // (countActionsToday is the per-account ceiling tier).
+  const id = db.insertAccount({ name: 'failcount', email: 'e2@x.com', session_file: 's' });
+  const bId = db.insertBranch({ account_id: id, name: 'default', is_default: 1, target_page_url: 'u' });
   const { ctx } = makeCtx(() => RETRY_FAILED);
-  const acct = { ...ACCOUNT(), id, name: 'failcount' };
+  const acct = { ...ACCOUNT(), id: bId, branchId: bId, accountId: id, name: 'failcount' };
 
   await loop.checkAndAct(fakePage, acct, ctx);
 
