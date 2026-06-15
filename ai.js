@@ -1,6 +1,11 @@
 'use strict';
 
+require('dotenv').config();
+
 const config = require('./config.json');
+
+// Secret is read from the environment (.env → process.env), NOT config.json.
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
 let openaiClient = null;
 
@@ -8,7 +13,7 @@ function getClient() {
   if (openaiClient) return openaiClient;
   try {
     const { OpenAI } = require('openai');
-    openaiClient = new OpenAI({ apiKey: config.openaiApiKey });
+    openaiClient = new OpenAI({ apiKey: OPENAI_API_KEY });
     return openaiClient;
   } catch {
     return null;
@@ -21,7 +26,7 @@ function pickRandom(arr) {
 }
 
 function isAIEnabled() {
-  return config.useAI === true && typeof config.openaiApiKey === 'string' && config.openaiApiKey.trim().length > 0;
+  return config.useAI === true && OPENAI_API_KEY.trim().length > 0;
 }
 
 async function generateComment(postText, account) {

@@ -1,0 +1,23 @@
+{
+  "headless": false,
+  "useProxy": false,
+
+  "delays": {
+    "minActionMs": 2000,
+    "maxActionMs": 5000,
+    "minTypingMs": 220,
+    "maxTypingMs": 500
+  },
+
+  "accountStaggerMs": 45000,
+
+  "_comment_openaiApiKey": "MOVED to .env as OPENAI_API_KEY. Do not put the key here.",
+  "useAI": false,
+  "logDir": "logs",
+  "screenshotOnError": true,
+  "useVision": true,
+  "visionModel": "gpt-4o-mini",
+  "visionMaxSteps": 8,
+
+  "enableDmToCommenters": false
+}

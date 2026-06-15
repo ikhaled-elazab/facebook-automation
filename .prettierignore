@@ -1,0 +1,8 @@
+node_modules/
+logs/
+sessions/
+state/
+db/*.db
+db/*.db-*
+debug_dom*.html
+package-lock.json

@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Secrets & environment
+.env
+.env.*
+!.env.example
+
+# Per-account secret-bearing config (de-facto data model — being migrated to a datastore)
+# Tracked example variants live as *.example
+config.json
+accounts.json
+
+# Live auth sessions (Playwright storageState — credential-equivalent, NEVER commit)
+sessions/
+
+# Runtime state (per-account loose-file state — being migrated to a datastore)
+state/
+
+# SQLite datastore (contains encrypted creds + runtime state — NEVER commit).
+# The schema (db/schema.sql) IS tracked; the .db data files are not.
+db/*.db
+db/*.db-wal
+db/*.db-shm
+
+# Logs & screenshots
+logs/
+*.log
+screenshots/
+
+# Dev / debug scraping artifacts (may contain scraped PII)
+debug_dom*.html
+dump*.html
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp

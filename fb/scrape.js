@@ -1,0 +1,368 @@
+'use strict';
+
+/**
+ * fb/scrape.js — post discovery on pages, profiles, and groups.
+ *
+ * Ports index.js getLatestPost / getLatestProfilePost / getLatestPostInGroup /
+ * getLatestPostInGroupByUser. The selector and scroll logic — the fragile,
+ * hard-won part — is preserved VERBATIM. The only changes are:
+ *   - humanization comes from an injected humanizer `h` (h.randomDelay) bound to
+ *     the account's DB settings, instead of the module-global randomDelay.
+ *   - the debug screenshot path uses logger.SCREENSHOT_DIR (an absolute,
+ *     pre-created path) instead of a __dirname-relative join, so it stays
+ *     correct now that this code lives under fb/.
+ *   - extractUserIdFromProfileUrl comes from core/state.js.
+ *
+ * Account fields read here are the legacy camelCase shape (targetPageUrl,
+ * ownProfileUrl, name) which worker/loadConfig.js preserves on the hydrated
+ * account object.
+ */
+
+const path = require('path');
+const logger = require('../logger.js');
+const { extractUserIdFromProfileUrl } = require('../core/state.js');
+
+/**
+ * Find the latest post on the account's target page and return its id/url/text.
+ * @param {import('playwright').Page} page
+ * @param {object} account hydrated account (uses .name, .targetPageUrl)
+ * @param {object} h humanizer ({ randomDelay })
+ * @returns {Promise<{postId: string, postUrl: string, postText: string}>}
+ * @throws if no post links are found (drives the retry wrapper)
+ */
+async function getLatestPost(page, account, h) {
+  logger.log(account.name, 'MONITOR', `Checking: ${account.targetPageUrl}`);
+
+  await page.goto(account.targetPageUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await h.randomDelay(4000, 7000);
+
+  // Scroll past header/photos into the posts feed
+  for (let i = 0; i < 6; i++) {
+    await page.evaluate(() => window.scrollBy(0, 900));
+    await h.randomDelay(1500, 2500);
+  }
+
+  const postLinks = await page.$$eval('a[href]', (anchors) =>
+    anchors
+      .map((a) => a.href)
+      .filter(
+        (href) =>
+          href.includes('/posts/') ||
+          href.includes('/permalink/') ||
+          href.includes('story_fbid=') ||
+          href.includes('permalink.php') ||
+          href.includes('/videos/') ||
+          href.includes('/photos/') ||
+          /set=pcb\.\d+/.test(href)
+      )
+  );
+
+  if (!postLinks.length) {
+    logger.warn(account.name, 'MONITOR', 'No post links found.');
+    throw new Error('No post links found');
+  }
+
+  const unique = [...new Set(postLinks)];
+  const rawUrl = unique[0];
+
+  // Extract post ID — handle pfbid encoded IDs too, with DOM attribute fallback
+  const idMatch =
+    rawUrl.match(/story_fbid=([^&]+)/) ||
+    rawUrl.match(/\/posts\/([^/?&]+)/) ||
+    rawUrl.match(/\/permalink\/(\d+)/) ||
+    rawUrl.match(/set=pcb\.(\d+)/);
+
+  let postId = idMatch ? idMatch[1] : null;
+
+  // DOM attribute fallback if URL regex couldn't extract an ID
+  if (!postId) {
+    postId = await page.evaluate((url) => {
+      const articles = Array.from(document.querySelectorAll('[role="article"]'));
+      for (const article of articles) {
+        const storyId = article.getAttribute('data-story-id') || article.getAttribute('data-ftid');
+        if (storyId) return storyId;
+      }
+      return url; // last resort: use full URL as ID
+    }, rawUrl);
+  }
+
+  // Extract visible post text from first article (capped at 600 chars)
+  const postText = await page.evaluate(() => {
+    const article = document.querySelector('[role="article"]');
+    return article ? (article.innerText || '').slice(0, 600) : '';
+  });
+
+  // Always reconstruct as a clean permalink URL
+  const profileId =
+    new URL(account.targetPageUrl).searchParams.get('id') ||
+    account.targetPageUrl.split('/').filter(Boolean).pop();
+  const postUrl = `https://www.facebook.com/permalink.php?story_fbid=${postId}&id=${profileId}`;
+
+  logger.log(account.name, 'MONITOR', `Latest post ID: ${postId} | URL: ${postUrl}`);
+  return { postId, postUrl, postText };
+}
+
+/**
+ * Find the URL of the latest post on a profile feed (used after a profile share
+ * to capture the shared post's permalink for comment monitoring).
+ * @param {import('playwright').Page} page
+ * @param {string} profileUrl
+ * @param {object} h humanizer ({ randomDelay })
+ * @returns {Promise<string|null>}
+ */
+async function getLatestProfilePost(page, profileUrl, h) {
+  await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await h.randomDelay(3000, 5000);
+
+  // Reload to ensure the freshly shared post is visible at the top
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+  await h.randomDelay(3000, 5000);
+
+  // Scroll just enough to get past the profile header/cover photo into the feed
+  for (let i = 0; i < 3; i++) {
+    await page.evaluate(() => window.scrollBy(0, 600));
+    await h.randomDelay(800, 1500);
+  }
+
+  // Find the first article in the feed (newest post) and grab its post link.
+  // Exclude comment links (comment_id=) — those are timestamp links on old posts, not the shared post itself.
+  const postUrl = await page.evaluate(() => {
+    const articles = Array.from(document.querySelectorAll('[role="article"]'));
+    for (const article of articles) {
+      const links = Array.from(article.querySelectorAll('a[href]'));
+      const found = links.find((a) => {
+        const h2 = a.href;
+        if (h2.includes('comment_id=')) return false;
+        return (
+          h2.includes('/posts/') ||
+          h2.includes('story_fbid=') ||
+          h2.includes('/permalink/') ||
+          h2.includes('permalink.php')
+        );
+      });
+      if (found) {
+        // Strip tracking params, keep only story_fbid and id
+        try {
+          const u = new URL(found.href);
+          const clean = new URL('https://www.facebook.com/permalink.php');
+          if (u.searchParams.get('story_fbid'))
+            clean.searchParams.set('story_fbid', u.searchParams.get('story_fbid'));
+          if (u.searchParams.get('id')) clean.searchParams.set('id', u.searchParams.get('id'));
+          return clean.toString();
+        } catch {
+          return found.href;
+        }
+      }
+    }
+    return null;
+  });
+
+  return postUrl || null;
+}
+
+/**
+ * Find the latest post URL in a group feed.
+ * @param {import('playwright').Page} page
+ * @param {string} groupUrl
+ * @param {object} h humanizer ({ randomDelay })
+ * @returns {Promise<string|null>}
+ */
+async function getLatestPostInGroup(page, groupUrl, h) {
+  await page.goto(groupUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await h.randomDelay(4000, 7000);
+
+  for (let i = 0; i < 4; i++) {
+    await page.evaluate(() => window.scrollBy(0, 800));
+    await h.randomDelay(1200, 2000);
+  }
+
+  const postUrl = await page.evaluate(() => {
+    const anchors = Array.from(document.querySelectorAll('a[href]'));
+
+    // 1. Prioritize timestamp links: role="link" + group post pattern + outside message
+    const timestampLink = anchors.find((a) => {
+      const href = a.href;
+      const isGroupPost = /\/groups\/[^/]+\/posts\//.test(href);
+      const isRoleLink = a.getAttribute('role') === 'link';
+      // Post links usually don't have too much query noise in the path itself,
+      // but they DO have tracking params which we clean later.
+      return (
+        isGroupPost &&
+        isRoleLink &&
+        !href.includes('comment_id=') &&
+        !a.closest('[data-ad-rendering-role="story_message"]')
+      );
+    });
+    if (timestampLink) return timestampLink.href;
+
+    // 2. Fallback: Any group post link outside message
+    const groupPost = anchors.find((a) => {
+      const href = a.href;
+      return (
+        /\/groups\/[^/]+\/posts\//.test(href) &&
+        !href.includes('comment_id=') &&
+        !a.closest('[data-ad-rendering-role="story_message"]')
+      );
+    });
+    if (groupPost) return groupPost.href;
+
+    // 3. Fallback to story_fbid or permalink links found outside the message content
+    const fallback = anchors.find((a) => {
+      const href = a.href;
+      return (
+        (/story_fbid=/.test(href) || /\/permalink\.php/.test(href)) &&
+        !href.includes('comment_id=') &&
+        !a.closest('[data-ad-rendering-role="story_message"]')
+      );
+    });
+    return fallback ? fallback.href : null;
+  });
+
+  return postUrl || null;
+}
+
+/**
+ * Find the account's OWN latest post inside a group (its "My posts" view),
+ * resolving the permalink by clicking the timestamp when needed. Falls back to
+ * the group feed if the user id can't be derived or nothing is found.
+ * @param {import('playwright').Page} page
+ * @param {string} groupUrl
+ * @param {object} account hydrated account (uses .name, .ownProfileUrl)
+ * @param {object} h humanizer ({ randomDelay })
+ * @returns {Promise<string|null>}
+ */
+async function getLatestPostInGroupByUser(page, groupUrl, account, h) {
+  const userId = extractUserIdFromProfileUrl(account);
+  if (!userId) {
+    logger.warn(account.name, 'SHARE', 'Cannot extract user ID from ownProfileUrl — falling back to group feed.');
+    return getLatestPostInGroup(page, groupUrl, h);
+  }
+
+  // Navigate to "My posts" page inside the group: groupUrl/user/userId
+  const myPostsUrl = groupUrl.replace(/\/$/, '') + '/user/' + userId + '/';
+  logger.log(account.name, 'SHARE', `Checking own posts in group: ${myPostsUrl}`);
+
+  await page.goto(myPostsUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await h.randomDelay(3000, 5000);
+
+  // Wait for feed content to appear (articles or feed container)
+  try {
+    await page.waitForSelector('[role="article"], [role="feed"]', { timeout: 15000 });
+    logger.log(account.name, 'SHARE', 'Feed content detected on user page.');
+  } catch {
+    logger.warn(account.name, 'SHARE', 'No feed/article elements appeared within 15s.');
+  }
+
+  // Scan for /groups/.../posts/... links, checking after each scroll step.
+  // Also look for the timestamp link to click if no direct post links appear.
+  const scanForPostLinks = () =>
+    page.evaluate(() => {
+      // 1. Direct post permalink links anywhere on page (outside post body)
+      const postLink = Array.from(document.querySelectorAll('a[href]')).find((a) => {
+        const href = a.href;
+        return (
+          /\/groups\/[^/]+\/posts\/[^/?#]+/.test(href) &&
+          !href.includes('comment_id=') &&
+          !a.closest('[data-ad-rendering-role="story_message"]')
+        );
+      });
+      if (postLink) return { type: 'url', value: postLink.href };
+
+      // 2. Timestamp link to click (relative href with __cft__, outside post body/profile)
+      const dateLink = Array.from(document.querySelectorAll('a[role="link"]')).find((a) => {
+        const href = a.getAttribute('href') || '';
+        return (
+          href.startsWith('?') &&
+          href.includes('__cft__') &&
+          !a.closest('[data-ad-rendering-role="story_message"]') &&
+          !a.closest('[data-ad-rendering-role="profile_name"]')
+        );
+      });
+      if (dateLink) return { type: 'dateLink', value: dateLink.href };
+
+      return null;
+    });
+
+  let dateLinkHref = null;
+  for (let i = 0; i < 8; i++) {
+    await page.evaluate(() => window.scrollBy(0, 600));
+    await h.randomDelay(1000, 1800);
+
+    const found = await scanForPostLinks();
+    if (!found) continue;
+    if (found.type === 'url') return found.value.split('?')[0];
+    if (found.type === 'dateLink') {
+      dateLinkHref = found.value;
+      break;
+    }
+  }
+
+  // Click the timestamp — Facebook's SPA router updates the URL to the post permalink
+  if (dateLinkHref) {
+    logger.log(account.name, 'SHARE', 'Clicking post date to resolve permalink...');
+    try {
+      // Remove target="_blank" so the click navigates the current tab
+      await page.evaluate((href) => {
+        const link = Array.from(document.querySelectorAll('a[role="link"]')).find((a) => a.href === href);
+        if (link) link.removeAttribute('target');
+      }, dateLinkHref);
+
+      const dateEl = await page.evaluateHandle(
+        (href) => Array.from(document.querySelectorAll('a[role="link"]')).find((a) => a.href === href),
+        dateLinkHref
+      );
+
+      await Promise.all([
+        page.waitForURL((url) => /\/groups\/[^/]+\/posts\//.test(url), { timeout: 12000 }).catch(() => {}),
+        dateEl.click(),
+      ]);
+
+      await h.randomDelay(1500, 2500);
+
+      // After SPA navigation, scan for /posts/ links on the resulting page
+      const urlNow = page.url();
+      if (/\/groups\/[^/]+\/posts\//.test(urlNow)) {
+        return urlNow.split('?')[0];
+      }
+
+      // Page URL didn't change to /posts/ — scan DOM for post links on this page
+      const postLinkOnPage = await page.evaluate(() => {
+        const a = Array.from(document.querySelectorAll('a[href]')).find(
+          (a) => /\/groups\/[^/]+\/posts\/[^/?#]+/.test(a.href) && !a.href.includes('comment_id=')
+        );
+        return a?.href ?? null;
+      });
+      if (postLinkOnPage) return postLinkOnPage.split('?')[0];
+    } catch (e) {
+      logger.warn(account.name, 'SHARE', `Date click failed: ${e.message}`);
+    }
+  }
+
+  // Debug: Log all hrefs on the page to understand what's there
+  const allHrefs = await page.evaluate(() => {
+    return Array.from(document.querySelectorAll('a[href]'))
+      .map((a) => a.href)
+      .filter((h2) => h2.includes('/groups/') || h2.includes('story_fbid') || h2.includes('permalink'))
+      .slice(0, 15);
+  });
+  logger.warn(account.name, 'SHARE', `Debug — relevant links on user page: ${JSON.stringify(allHrefs)}`);
+
+  // Take screenshot for debugging
+  try {
+    const ssPath = path.join(logger.SCREENSHOT_DIR, `${account.name}_GROUP_USER_PAGE_${Date.now()}.png`);
+    await page.screenshot({ path: ssPath, fullPage: false });
+    logger.warn(account.name, 'SHARE', `Screenshot saved: ${ssPath}`);
+  } catch {
+    /* ignore screenshot errors */
+  }
+
+  logger.warn(account.name, 'SHARE', 'No posts found on user page — falling back to group feed.');
+  return getLatestPostInGroup(page, groupUrl, h);
+}
+
+module.exports = {
+  getLatestPost,
+  getLatestProfilePost,
+  getLatestPostInGroup,
+  getLatestPostInGroupByUser,
+};

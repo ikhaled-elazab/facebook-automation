@@ -11,8 +11,13 @@
  * Exports: { aiAct(page, goal, account) → Promise<boolean> }
  */
 
+require('dotenv').config();
+
 const config = require('./config.json');
 const logger = require('./logger.js');
+
+// Secret is read from the environment (.env → process.env), NOT config.json.
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
 let openaiClient = null;
 
@@ -20,7 +25,7 @@ function getClient() {
   if (openaiClient) return openaiClient;
   try {
     const { OpenAI } = require('openai');
-    openaiClient = new OpenAI({ apiKey: config.openaiApiKey });
+    openaiClient = new OpenAI({ apiKey: OPENAI_API_KEY });
     return openaiClient;
   } catch {
     return null;

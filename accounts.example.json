@@ -1,0 +1,36 @@
+[
+  {
+    "name": "account1",
+    "email": "you@example.com",
+    "password": "REDACTED_USE_REAL_VALUE_IN_UNTRACKED_accounts.json",
+    "sessionFile": "sessions/account1.json",
+    "lastPostFile": "state/account1_last_post.txt",
+    "targetPageUrl": "https://www.facebook.com/profile.php?id=000000000000000",
+    "checkIntervalMinutes": 1,
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "locale": "en-US",
+    "timezoneId": "Africa/Cairo",
+    "proxy": {
+      "server": "http://PROXY_HOST:PORT",
+      "username": "PROXY_USER",
+      "password": "PROXY_PASS"
+    },
+    "groups": [
+      "https://www.facebook.com/groups/000000000000000"
+    ],
+    "comments": [
+      "Great post! Thanks for sharing",
+      "Very informative, appreciate the update!"
+    ],
+    "ownProfileUrl": "https://www.facebook.com/profile.php?id=000000000000000",
+    "replies": [
+      "Thank you!",
+      "Glad you found it useful!"
+    ],
+    "sendDmToCommenters": false,
+    "dmAsPageUrl": "https://www.facebook.com/profile.php?id=000000000000000",
+    "dmMessages": [
+      "Hey! Thanks for your comment, really appreciate it"
+    ]
+  }
+]
