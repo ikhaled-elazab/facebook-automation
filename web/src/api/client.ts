@@ -17,6 +17,7 @@ import type {
   EventsResponse,
   Login2faResponse,
   LoginLaunchResponse,
+  LoginMode,
   LoginResponse,
   LoginSessionView,
   LoginStatusResponse,
@@ -152,9 +153,13 @@ export const api = {
   // it via ApiError.isConflict. The stored password is never sent here; the server
   // reads password_enc set via the account editor.
   login: {
-    launch: (accountId: number): Promise<LoginSessionView> =>
+    // `mode` is optional and back-compatible: omit it (or pass 'auto') for the
+    // headless form login; pass 'manual' to open a headed browser the operator
+    // drives through an OTP / QR / push challenge. An absent mode sends no body.
+    launch: (accountId: number, mode?: LoginMode): Promise<LoginSessionView> =>
       request<LoginLaunchResponse>(`/api/accounts/${accountId}/login`, {
         method: 'POST',
+        body: mode ? { mode } : undefined,
       }).then((r) => r.login),
 
     status: (accountId: number): Promise<LoginSessionView> =>

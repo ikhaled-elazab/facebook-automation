@@ -45,6 +45,7 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const { DEFAULT_USER_AGENT } = require('./core/fingerprint.js');
 
 chromium.use(StealthPlugin());
 
@@ -53,6 +54,12 @@ const LOGIN_STATES = Object.freeze({
   IDLE: 'idle',
   RUNNING: 'running',
   NEEDS_2FA: 'needs_2fa',
+  // The HUMAN-DRIVEN pause: a headed browser is open and the operator must clear
+  // a challenge we cannot automate from a typed code — an authenticator OTP, a QR
+  // scan ("log in with a code from another device"), or a push-to-approve prompt.
+  // Unlike needs_2fa (which resumes on provide2fa(code)), this state resolves when
+  // the browser itself reaches a logged-in state, detected by polling.
+  NEEDS_MANUAL: 'needs_manual',
   OK: 'ok',
   FAILED: 'failed',
 });
@@ -62,6 +69,11 @@ const TERMINAL_STATES = Object.freeze(new Set([LOGIN_STATES.OK, LOGIN_STATES.FAI
 
 /** Bound a 2FA wait so a session never hangs forever waiting for a human code. */
 const DEFAULT_2FA_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Bound a manual login the same way: a parked browser must not wait forever. */
+const DEFAULT_MANUAL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+/** How often the manual flow re-checks whether the human has finished logging in. */
+const DEFAULT_MANUAL_POLL_MS = 1500;
 
 // ── Selectors (preserved verbatim from the original login.js) ─────────────────
 
@@ -117,17 +129,32 @@ class LoginSession {
    * @param {Function} [deps.logger] (msg:string) => void — server passes a no-op or
    *   a redacting logger; CLI passes console.log. NEVER receives secrets.
    * @param {number} [deps.twoFaTimeoutMs] how long needs_2fa waits before failing.
+   * @param {number} [deps.manualTimeoutMs] how long needs_manual waits for a human.
+   * @param {number} [deps.manualPollMs] interval between manual login-state checks.
+   * @param {'auto'|'manual'} [params.mode] flow shape. 'auto' (default) drives the
+   *   form + typed-code 2FA. 'manual' opens a headed browser and parks at
+   *   needs_manual until the operator clears the challenge (OTP / QR / push) in it.
    */
-  constructor({ account, email, password, settings, proxyPassword }, deps = {}) {
+  constructor({ account, email, password, settings, proxyPassword, mode }, deps = {}) {
     this._account = account;
     this._email = email;
     this._password = password; // transient — cleared after the fill
     this._settings = settings || {};
     this._proxyPassword = proxyPassword;
+    this._mode = mode === 'manual' ? 'manual' : 'auto';
 
     this._launchBrowser = deps.launchBrowser || null;
     this._log = typeof deps.logger === 'function' ? deps.logger : () => {};
     this._twoFaTimeoutMs = deps.twoFaTimeoutMs || DEFAULT_2FA_TIMEOUT_MS;
+    this._manualTimeoutMs = deps.manualTimeoutMs || DEFAULT_MANUAL_TIMEOUT_MS;
+    this._manualPollMs = deps.manualPollMs || DEFAULT_MANUAL_POLL_MS;
+    // Optional remote-browser streamer for the dashboard-driven manual flow:
+    // (page) => LoginStream. Injected by the server (which streams a HEADLESS
+    // browser to the UI); left null for the CLI (which opens a headed window) and
+    // for tests that don't exercise streaming. Kept as a dep so login-flow.js does
+    // not depend on the CDP layer directly.
+    this._streamFactory = typeof deps.streamFactory === 'function' ? deps.streamFactory : null;
+    this._stream = null;
 
     this._state = LOGIN_STATES.IDLE;
     this._detail = null;
@@ -152,6 +179,16 @@ class LoginSession {
     return this._detail;
   }
 
+  /**
+   * @returns {object|null} the live remote-browser stream for a dashboard-driven
+   * manual login (created once the headless browser is open), or null when there
+   * is no stream (auto mode, CLI headed manual, or before/after the manual flow).
+   * The WebSocket layer subscribes to this to relay frames + input.
+   */
+  get stream() {
+    return this._stream;
+  }
+
   /** @returns {boolean} true if the session has reached a terminal state. */
   get isTerminal() {
     return TERMINAL_STATES.has(this._state);
@@ -167,6 +204,10 @@ class LoginSession {
       account_name: this._account.name,
       status: this._state,
       detail: this._detail,
+      // The flow shape, so the UI can render the right surface for a paused
+      // session: a code input for needs_2fa vs. a "complete it in the browser"
+      // affordance (and, later, the embedded stream) for needs_manual.
+      mode: this._mode,
       started_at: this._startedAt,
       finished_at: this._finishedAt,
     };
@@ -221,6 +262,13 @@ class LoginSession {
 
   /** Close the browser best-effort. Idempotent — safe on every exit path. */
   async _closeBrowser() {
+    // Stop the remote stream BEFORE the browser so the CDP session detaches
+    // cleanly and connected dashboards see the stream end rather than a hard drop.
+    if (this._stream) {
+      const s = this._stream;
+      this._stream = null;
+      await s.stop().catch(() => {});
+    }
     if (this._browser) {
       const b = this._browser;
       this._browser = null;
@@ -295,35 +343,55 @@ class LoginSession {
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
       });
 
-      await this._fillLoginForm(page);
-      if (this._state === LOGIN_STATES.FAILED) return this._finish();
-
-      const needs2fa = await this._detectTwoFa(page);
-      if (needs2fa) {
-        this._transition(LOGIN_STATES.NEEDS_2FA, '2FA / checkpoint detected.');
-        this._log(`[LOGIN:${this._account.name}] 2FA / checkpoint detected.`);
-        let code;
-        try {
-          code = await this._waitForTwoFaCode(opts.interactiveAsk);
-        } catch (err) {
-          // Timeout, abort, or no-input — fail closed.
-          this._transition(LOGIN_STATES.FAILED, `2FA not completed: ${err.message}`);
+      if (this._mode === 'manual') {
+        // Human-driven path: the (headed) browser is open at the login page; park
+        // at needs_manual and wait for the operator to clear whatever challenge FB
+        // shows (typed OTP, QR scan, or push-approve). We do NOT fill the password
+        // here — the human owns the whole credential step.
+        const done = await this._runManual(page, context);
+        if (!done) {
+          // Aborted or timed out without ever reaching a logged-in state. abort()
+          // may already have moved us to a terminal state; only set one if not.
+          if (!this.isTerminal) {
+            this._transition(
+              LOGIN_STATES.FAILED,
+              this._aborted ? 'Aborted.' : 'Manual login not completed in time.'
+            );
+          }
           return this._finish();
         }
-        // Resume.
-        this._transition(LOGIN_STATES.RUNNING, 'Submitting 2FA code.');
-        await this._submitTwoFa(page, code);
-        code = null; // discard the transient secret promptly
+      } else {
+        await this._fillLoginForm(page);
+        if (this._state === LOGIN_STATES.FAILED) return this._finish();
+
+        const needs2fa = await this._detectTwoFa(page);
+        if (needs2fa) {
+          this._transition(LOGIN_STATES.NEEDS_2FA, '2FA / checkpoint detected.');
+          this._log(`[LOGIN:${this._account.name}] 2FA / checkpoint detected.`);
+          let code;
+          try {
+            code = await this._waitForTwoFaCode(opts.interactiveAsk);
+          } catch (err) {
+            // Timeout, abort, or no-input — fail closed.
+            this._transition(LOGIN_STATES.FAILED, `2FA not completed: ${err.message}`);
+            return this._finish();
+          }
+          // Resume.
+          this._transition(LOGIN_STATES.RUNNING, 'Submitting 2FA code.');
+          await this._submitTwoFa(page, code);
+          code = null; // discard the transient secret promptly
+        }
+
+        const ok = await this._verifySuccess(page);
+        if (!ok) {
+          await this._captureFailureScreenshot(page);
+          this._transition(LOGIN_STATES.FAILED, 'Login did not reach a logged-in state.');
+          return this._finish();
+        }
       }
 
-      const ok = await this._verifySuccess(page);
-      if (!ok) {
-        await this._captureFailureScreenshot(page);
-        this._transition(LOGIN_STATES.FAILED, 'Login did not reach a logged-in state.');
-        return this._finish();
-      }
-
-      // Persist the session storageState (the only on-disk artifact).
+      // Persist the session storageState (the only on-disk artifact) — shared by
+      // both the automated and the manual paths.
       await context.storageState({ path: sessionPath });
       this._log(`[LOGIN:${this._account.name}] Session saved.`);
       this._transition(LOGIN_STATES.OK, 'Session saved.');
@@ -346,6 +414,120 @@ class LoginSession {
   }
 
   /**
+   * Drive the MANUAL (human-in-the-loop) flow on an already-open page. Navigates
+   * to the login page, dismisses the cookie banner, optionally pre-fills the email
+   * (a convenience — never the password), then parks at needs_manual and waits for
+   * the operator to finish logging in directly in the browser.
+   *
+   * Transport-agnostic: this method does NOT care HOW the human sees the browser.
+   * On the VPS a HEADLESS browser is streamed to the dashboard via CDP screencast
+   * (deps.streamFactory); in the CLI / a desktop build it is a native headed window
+   * (no streamFactory). Either way the state machine is identical and the only
+   * artifact is the captured storageState.
+   *
+   * @param {import('playwright').Page} page
+   * @param {import('playwright').BrowserContext} context
+   * @returns {Promise<boolean>} true if a logged-in state was reached (→ caller
+   *   persists storageState); false on timeout/abort (→ caller fails closed).
+   */
+  async _runManual(page, context) {
+    const name = this._account.name;
+    this._log(`[LOGIN:${name}] Manual login: opening facebook.com/login...`);
+    await page
+      .goto('https://www.facebook.com/login', { waitUntil: 'domcontentloaded', timeout: 30000 })
+      .catch(() => {});
+
+    // Bring the remote-browser stream up as soon as the page is open, so the
+    // operator sees (and can drive) the login form itself — not just the later
+    // challenge. Best-effort: a stream that fails to start must not fail the login
+    // (the flow still works for a co-located headed window).
+    if (this._streamFactory) {
+      try {
+        this._stream = this._streamFactory(page);
+        await this._stream.start();
+      } catch (err) {
+        this._log(`[LOGIN:${name}] Remote stream failed to start: ${err.message}`);
+        this._stream = null;
+      }
+    }
+
+    // Best-effort cookie-consent dismissal (same selectors as the automated path).
+    for (const sel of COOKIE_BTN_SELECTORS) {
+      const btn = await page.$(sel).catch(() => null);
+      if (btn) {
+        await btn.click().catch(() => {});
+        await page.waitForTimeout(500).catch(() => {});
+        break;
+      }
+    }
+
+    // Convenience only: pre-fill the email so the operator goes straight to the
+    // challenge. Skipped silently if absent or the field is not present (e.g. a
+    // QR-first login surface). The password is intentionally NOT pre-filled.
+    if (this._email) {
+      for (const sel of EMAIL_SELECTORS) {
+        const field = await page.$(sel).catch(() => null);
+        if (field) {
+          await field.fill(this._email).catch(() => {});
+          break;
+        }
+      }
+    }
+
+    this._transition(
+      LOGIN_STATES.NEEDS_MANUAL,
+      'Waiting for you to complete login in the opened browser (OTP / QR / approve).'
+    );
+    this._log(`[LOGIN:${name}] Parked at needs_manual — awaiting human completion.`);
+    return this._waitForManualLogin(page, context);
+  }
+
+  /**
+   * Poll until the human has logged in, the session is aborted, the page closes,
+   * or the manual timeout elapses. Bounded + non-blocking: each tick yields via
+   * page.waitForTimeout so this never busy-spins.
+   * @param {import('playwright').Page} page
+   * @param {import('playwright').BrowserContext} context
+   * @returns {Promise<boolean>}
+   */
+  async _waitForManualLogin(page, context) {
+    const deadline = Date.now() + this._manualTimeoutMs;
+    for (;;) {
+      if (this._aborted) return false;
+      if (await this._manualLoginComplete(page, context)) return true;
+      if (Date.now() >= deadline) return false;
+      await page.waitForTimeout(this._manualPollMs).catch(() => {});
+      if (typeof page.isClosed === 'function' && page.isClosed()) return false;
+    }
+  }
+
+  /**
+   * Decide whether the manual login has reached a logged-in state. The STRONGEST
+   * signal is the presence of Facebook's `c_user` session cookie; we prefer it and
+   * fall back to the URL heuristic (_verifySuccess) only when cookie inspection is
+   * unavailable. Never throws — a probe failure is treated as "not yet".
+   * @param {import('playwright').Page} page
+   * @param {import('playwright').BrowserContext} context
+   * @returns {Promise<boolean>}
+   */
+  async _manualLoginComplete(page, context) {
+    if (context && typeof context.cookies === 'function') {
+      try {
+        const cookies = await context.cookies('https://www.facebook.com');
+        if (Array.isArray(cookies) && cookies.some((c) => c && c.name === 'c_user' && c.value)) {
+          return true;
+        }
+        // Cookie present-but-not-yet-set: keep waiting (don't fall through to the
+        // weaker URL check, which could false-positive on an interstitial).
+        return false;
+      } catch {
+        /* cookie inspection unavailable — fall back to the URL heuristic below */
+      }
+    }
+    return this._verifySuccess(page).catch(() => false);
+  }
+
+  /**
    * Build Playwright context options for this account, decrypting nothing here —
    * the proxy password is passed in already-decrypted (or undefined).
    * @returns {object}
@@ -353,7 +535,11 @@ class LoginSession {
   _buildContextOptions() {
     const a = this._account;
     const opts = {
-      userAgent: a.userAgent || undefined,
+      // Default a missing UA to the shared constant (NOT undefined → Playwright's
+      // headless default, which contains "HeadlessChrome" and is a bot tell). The
+      // worker reuses this session with the same default, so the fingerprint is
+      // consistent between login and activity.
+      userAgent: a.userAgent || DEFAULT_USER_AGENT,
       viewport: { width: 1366, height: 768 },
       locale: a.locale || 'en-US',
       timezoneId: a.timezoneId || 'America/New_York',
@@ -527,4 +713,6 @@ module.exports = {
   TERMINAL_STATES,
   defaultLaunchBrowser,
   DEFAULT_2FA_TIMEOUT_MS,
+  DEFAULT_MANUAL_TIMEOUT_MS,
+  DEFAULT_MANUAL_POLL_MS,
 };

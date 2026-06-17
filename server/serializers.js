@@ -14,6 +14,9 @@
  * state without ever receiving the ciphertext.
  */
 
+const fs = require('fs');
+const path = require('path');
+
 /**
  * Public, safe account fields. Note: SQLite stores booleans as 0/1 integers;
  * we coerce the known boolean columns to real booleans for a clean API.
@@ -60,7 +63,44 @@ function serializeAccount(row) {
   // Derived "secret is set" booleans — never the secret itself.
   out.has_password = !!row.password_enc;
   out.has_proxy_password = !!row.proxy_password_enc;
+  // Derived DURABLE login state: does a saved session (storageState) file exist?
+  // This is the artifact the worker reuses (worker/loop.js), so it is the truthful,
+  // restart-proof "logged in" signal — unlike the in-memory login-attempt status,
+  // which the UI uses only to drive an active flow. `session_updated_at` lets the
+  // UI show how fresh the session is (a present-but-stale file can still be expired
+  // server-side; existence ≠ guaranteed-valid, but it is the right baseline).
+  out.has_session = hasSessionFile(row.session_file);
+  out.session_updated_at = sessionFileMtimeMs(row.session_file);
   return out;
+}
+
+/** Resolve a (possibly relative) session_file path the same way login/worker do. */
+function resolveSessionPath(sessionFile) {
+  return sessionFile ? path.resolve(sessionFile) : null;
+}
+
+/** True when the account has a non-empty saved session (storageState) file. */
+function hasSessionFile(sessionFile) {
+  const p = resolveSessionPath(sessionFile);
+  if (!p) return false;
+  try {
+    const st = fs.statSync(p);
+    return st.isFile() && st.size > 0;
+  } catch {
+    // ENOENT (never logged in) or any stat error → no usable session.
+    return false;
+  }
+}
+
+/** Epoch-ms mtime of the session file, or null when there is none. */
+function sessionFileMtimeMs(sessionFile) {
+  const p = resolveSessionPath(sessionFile);
+  if (!p) return null;
+  try {
+    return Math.round(fs.statSync(p).mtimeMs);
+  } catch {
+    return null;
+  }
 }
 
 // ── Branches (Phase 2 — the MONITORING UNIT) ──────────────────────────────────

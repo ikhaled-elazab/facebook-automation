@@ -132,22 +132,41 @@ export function WorkerScreen() {
             )}
           </div>
           <div className="worker-hero__actions">
-            <Button
-              variant="success"
-              onClick={() => void act('start')}
-              loading={busy === 'start'}
-              disabled={busy !== null}
-            >
-              <IconPlay size={16} /> {desiredRunning ? 'Restart' : 'Start'}
-            </Button>
-            <Button
-              variant="danger"
-              onClick={() => void act('stop')}
-              loading={busy === 'stop'}
-              disabled={busy !== null}
-            >
-              <IconStop size={16} /> Stop
-            </Button>
+            {/* Single state-aware toggle: Start when the worker is stopped, Stop
+                when it is running. Keyed off desired_state (intent) so it flips
+                immediately on click while the heartbeat catches up. */}
+            {desiredRunning ? (
+              <Button
+                variant="danger"
+                onClick={() => void act('stop')}
+                loading={busy === 'stop'}
+                disabled={busy !== null}
+              >
+                <IconStop size={16} /> Stop
+              </Button>
+            ) : (
+              <Button
+                variant="success"
+                onClick={() => void act('start')}
+                loading={busy === 'start'}
+                disabled={busy !== null}
+              >
+                <IconPlay size={16} /> Start
+              </Button>
+            )}
+            {/* Recovery affordance: only when the worker SHOULD be running but its
+                heartbeat is stale (crashed). The toggle shows "Stop" in that state,
+                so a direct Restart (re-issue start) is the genuinely useful extra. */}
+            {health === 'warn' && (
+              <Button
+                variant="ghost"
+                onClick={() => void act('start')}
+                loading={busy === 'start'}
+                disabled={busy !== null}
+              >
+                <IconRefresh size={16} /> Restart
+              </Button>
+            )}
           </div>
         </div>
       </Card>

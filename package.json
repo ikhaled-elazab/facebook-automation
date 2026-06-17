@@ -7,6 +7,7 @@
     "proxy:check": "node proxyCheck.js",
     "login": "node login.js",
     "login:all": "node login.js --all",
+    "login:manual": "node login.js --manual",
     "start": "node index.js",
     "control": "node server/index.js",
     "ui:install": "npm --prefix web install",
@@ -48,6 +49,7 @@
     "playwright-extra": "^4.3.6",
     "pm2": "^7.0.1",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "ws": "^8.21.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

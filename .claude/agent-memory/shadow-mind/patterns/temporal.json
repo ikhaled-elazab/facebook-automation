@@ -1,13 +1,14 @@
 {
   "by_agent_hour": {},
   "by_day_of_week": {
-    "0": 6
+    "0": 12
   },
   "by_hour_utc": {
-    "12": 6
+    "12": 6,
+    "14": 4
   },
-  "computed_at": "2026-06-15T14:15:53+00:00",
+  "computed_at": "2026-06-16T22:40:44+00:00",
   "min_count_threshold": 3,
-  "sample_size": 6,
+  "sample_size": 12,
   "version": 1
 }

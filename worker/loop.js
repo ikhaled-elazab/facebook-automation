@@ -28,6 +28,7 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const logger = require('../logger.js');
 const db = require('../db');
 const { decrypt } = require('../crypto.js');
+const { DEFAULT_USER_AGENT } = require('../core/fingerprint.js');
 const { generateComment } = require('../ai.js');
 const { createHumanizer } = require('../core/humanize.js');
 const { createRetry, sleep, RETRY_FAILED } = require('../core/retry.js');
@@ -409,7 +410,11 @@ async function checkAndAct(page, account, ctx) {
 function buildContextOptions(account, sessionPath, settings) {
   const opts = {
     storageState: sessionPath,
-    userAgent: account.userAgent,
+    // null user_agent (nullable column; UI/migration may leave it empty) would
+    // crash newContext ("expected string, got object" — typeof null). Default to
+    // the SAME UA the login flow uses so the reused session's fingerprint stays
+    // consistent (a UA change between login and activity is a ban signal).
+    userAgent: account.userAgent || DEFAULT_USER_AGENT,
     viewport: { width: 1366, height: 768 },
     locale: account.locale || 'en-US',
     timezoneId: account.timezoneId || 'America/New_York',

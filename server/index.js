@@ -18,6 +18,7 @@ require('dotenv').config();
 
 const { loadConfig } = require('./config');
 const { createApp } = require('./app');
+const { attachLoginStreamWs } = require('./login-stream-ws');
 const db = require('../db');
 const { isKeyConfigured } = require('../crypto');
 
@@ -53,6 +54,16 @@ function main() {
     );
   });
 
+  // Attach the authenticated remote-browser stream (manual login) to the SAME HTTP
+  // server, so it shares the loopback bind + SSH tunnel and the session auth. The
+  // upgrade handler authenticates via the app's session middleware before accepting.
+  const loginStreamWs = attachLoginStreamWs({
+    server,
+    sessionMiddleware: app.locals.sessionMiddleware,
+    loginControl: app.locals.loginControl,
+    logger: console,
+  });
+
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
       console.error(`[control-plane] FATAL: port ${config.port} already in use.`);
@@ -72,7 +83,11 @@ function main() {
     // chromium process tree is orphaned on exit (parity with the worker's HIGH-3
     // shutdown discipline). Best-effort + bounded by the hard-exit timer below.
     const loginControl = app.locals && app.locals.loginControl;
-    Promise.resolve(loginControl ? loginControl.abortAll() : undefined)
+    // Close streaming sockets first (they hold the upgraded connections open),
+    // then abort login flows so their browsers + CDP sessions tear down cleanly.
+    Promise.resolve(loginStreamWs ? loginStreamWs.close() : undefined)
+      .catch((e) => console.error('[control-plane] error closing stream sockets:', e.message))
+      .then(() => (loginControl ? loginControl.abortAll() : undefined))
       .catch((e) => console.error('[control-plane] error aborting login flows:', e.message))
       .finally(() => {
         server.close((closeErr) => {

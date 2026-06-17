@@ -1,26 +1,26 @@
 {
   "clusters": [
     {
-      "cluster_id": "c-001",
-      "confidence": 0.3,
+      "cluster_id": "c-002",
+      "confidence": 0.4,
       "first_seen": "2026-06-15T12:04:44Z",
-      "last_seen": "2026-06-15T12:04:45Z",
-      "observation_count": 2,
-      "pattern": "branch schema account",
+      "last_seen": "2026-06-15T14:51:06Z",
+      "observation_count": 4,
+      "pattern": "branch schema phase",
       "source_sessions": [
         "multibranch-design"
       ],
-      "successful_fix": null,
+      "successful_fix": "Phase 2 build complete on TEMP DB (live db/fb-bot.db untouched, no commits). Files: migrations/v2_branches.js + migrate.js runner wiring; db.js (SCHEMA_VERSION=2, fixed ACCOUNT_UPDATE_COLUMNS, new BRANCH_UPDATE_COLUMNS, branch accessors, countBranchActionsToday); worker/loadConfig.js (hydrateBranch + loadWorkerConfig branches[]); worker/loop.js cycle-per-branch; core/{state,governor,ban-signal}.js re-keyed to branch_id; test/migration-v2.test.js. Round-trip test 4/4 PASS (lossless, idempotent, BLOCKING-1 fault-injection rollback, hydrateBranch contract). MIGRATION ORDERING GOTCHA caught by full-runner integration test (not the unit test): db.getDb() applies v2 schema head whose branch_id indexes fail on v1 tables even with IF NOT EXISTS \u2014 so migrate.js must run migrateToV2 on a RAW connection BEFORE db.getDb(). Three-tier cap: branch.dailyActionCap(NULL=inherit) -> accounts.daily_action_cap CEILING(retained) -> settings.global(0=unlimited); default-branch cap seeded NULL to avoid budget-doubling.",
       "trigger": [
         "branch",
         "schema",
-        "account",
-        "rebuild",
-        "accounts"
+        "phase",
+        "test",
+        "account"
       ]
     },
     {
-      "cluster_id": "c-002",
+      "cluster_id": "c-001",
       "confidence": 0.3,
       "first_seen": "2026-06-15T12:04:45Z",
       "last_seen": "2026-06-15T12:04:45Z",
@@ -39,8 +39,8 @@
       ]
     }
   ],
-  "computed_at": "2026-06-15T14:15:53+00:00",
+  "computed_at": "2026-06-16T22:40:44+00:00",
   "min_cluster_size": 2,
-  "sample_size": 6,
+  "sample_size": 12,
   "version": 1
 }

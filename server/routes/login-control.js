@@ -27,7 +27,7 @@
 
 const express = require('express');
 const { asyncHandler, parseOrThrow } = require('./helpers');
-const { idParamSchema, login2faSchema } = require('../schemas');
+const { idParamSchema, login2faSchema, loginLaunchSchema } = require('../schemas');
 const { createLoginControl } = require('../login-control');
 
 /**
@@ -52,9 +52,12 @@ function loginControlRouter({ csrfProtection, loginControl }) {
     csrfProtection,
     asyncHandler(async (req, res) => {
       const { id } = parseOrThrow(idParamSchema, req.params);
-      const view = control.launch(id);
+      // Body is optional: an absent/empty body means the legacy auto launch. When
+      // present, `mode` selects auto vs. the human-driven manual (OTP/QR/push) flow.
+      const { mode } = parseOrThrow(loginLaunchSchema, req.body || {});
+      const view = control.launch(id, { mode });
       // 202 Accepted: the login was started and runs asynchronously (it may pause
-      // at needs_2fa). The body carries the current public session view.
+      // at needs_2fa or needs_manual). The body carries the current public view.
       res.status(202).json({ login: view });
     })
   );

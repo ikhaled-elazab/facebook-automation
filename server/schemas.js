@@ -288,6 +288,18 @@ const login2faSchema = z
   })
   .strict();
 
+// Launch body (optional). `mode` selects the flow shape: 'auto' (default) drives
+// the form + typed-code 2FA; 'manual' opens a HEADED browser and parks at
+// needs_manual for the operator to clear an OTP / QR scan / push-approve that has
+// no typeable code. The body may be ENTIRELY ABSENT (back-compat with the original
+// no-body launch) → mode resolves to undefined → control layer defaults to 'auto'.
+// `.strict()` so no stray keys ride into the control layer.
+const loginLaunchSchema = z
+  .object({
+    mode: z.enum(['auto', 'manual']).optional(),
+  })
+  .strict();
+
 // ── Status / recent actions query ─────────────────────────────────────────────
 
 // `limit` caps the page size (default 50, max 500). `before` is a cursor: the
@@ -318,6 +330,7 @@ module.exports = {
   updateSettingsSchema,
   workerActionSchema,
   login2faSchema,
+  loginLaunchSchema,
   recentActionsQuerySchema,
   idParamSchema,
   accountIdParamSchema,

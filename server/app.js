@@ -78,6 +78,9 @@ function createApp(config, opts = {}) {
         directives: {
           defaultSrc: ["'self'"],
           scriptSrc: ["'self'"],
+          // Same-origin WebSocket (the remote-browser login stream) needs an
+          // explicit connect-src; 'self' covers ws://<same-host> over the tunnel.
+          connectSrc: ["'self'"],
           objectSrc: ["'none'"],
           frameAncestors: ["'none'"],
           baseUri: ["'self'"],
@@ -125,23 +128,26 @@ function createApp(config, opts = {}) {
   // Expose for explicit teardown (graceful shutdown / tests).
   app.locals.sessionStore = store;
 
-  app.use(
-    session({
-      name: SESSION_COOKIE,
-      secret: config.sessionSecret,
-      store,
-      resave: false,
-      saveUninitialized: false, // no session row until login (or CSRF needs it)
-      rolling: true, // refresh expiry on activity
-      cookie: {
-        httpOnly: true,
-        sameSite: 'strict',
-        secure: config.isProduction,
-        maxAge: config.sessionTtlMs,
-        path: '/',
-      },
-    })
-  );
+  // Capture the session middleware in a variable (not just app.use'd inline) so the
+  // WebSocket upgrade handler (server/login-stream-ws.js) can run the SAME session
+  // logic to authenticate a stream connection. Exposed via app.locals for index.js.
+  const sessionMiddleware = session({
+    name: SESSION_COOKIE,
+    secret: config.sessionSecret,
+    store,
+    resave: false,
+    saveUninitialized: false, // no session row until login (or CSRF needs it)
+    rolling: true, // refresh expiry on activity
+    cookie: {
+      httpOnly: true,
+      sameSite: 'strict',
+      secure: config.isProduction,
+      maxAge: config.sessionTtlMs,
+      path: '/',
+    },
+  });
+  app.use(sessionMiddleware);
+  app.locals.sessionMiddleware = sessionMiddleware;
 
   // 4) CSRF — double-submit signed token bound to the session id.
   const { generateCsrfToken, doubleCsrfProtection } = doubleCsrf({

@@ -47,7 +47,9 @@ import {
   IconRefresh,
   IconCheck,
   IconAlert,
+  IconTerminal,
 } from '../components/icons';
+import { RemoteBrowser } from '../components/RemoteBrowser';
 import type { Account, LoginStatus } from '../api/types';
 
 export function AccountsScreen() {
@@ -215,6 +217,10 @@ const LOGIN_BADGE: Record<LoginStatus, { tone: 'ok' | 'warn' | 'danger' | 'info'
   idle: { tone: 'info', label: 'Not logged in' },
   running: { tone: 'accent', label: 'Logging in…' },
   needs_2fa: { tone: 'warn', label: 'Needs 2FA code' },
+  // A headed browser is open and the operator must finish login in it (OTP / QR /
+  // approve). The surface that lets them do so (instructions now, embedded stream
+  // later) is layered on top; the badge just reflects the parked state.
+  needs_manual: { tone: 'warn', label: 'Finish in browser' },
   ok: { tone: 'ok', label: 'Logged in' },
   failed: { tone: 'danger', label: 'Login failed' },
 };
@@ -222,45 +228,89 @@ const LOGIN_BADGE: Record<LoginStatus, { tone: 'ok' | 'warn' | 'danger' | 'info'
 function LoginCell({ account }: { account: Account }) {
   const login = useAccountLogin(account.id);
   const { status, detail, launching, error } = login;
+  // The remote-browser modal can be dismissed without ending the (server-side)
+  // login; a new manual launch re-opens it. It only renders while needs_manual.
+  const [browserDismissed, setBrowserDismissed] = useState(false);
 
-  const badge = LOGIN_BADGE[status];
-  // Launch is blocked while a flow is active or in flight, or when there is no
-  // stored credential to log in with (Model A requires a saved password).
-  const active = status === 'running' || status === 'needs_2fa';
-  const canLaunch = !active && !launching && account.has_password;
+  // The durable "logged in" state comes from the saved session FILE
+  // (account.has_session) — it survives a page refresh AND a server restart, unlike
+  // the in-memory login-attempt `status`. The live flow status overlays the baseline
+  // during/after an attempt; when the flow is idle but a session exists, show
+  // "Logged in" rather than reverting to "Not logged in".
+  const effectiveStatus = status === 'idle' && account.has_session ? 'ok' : status;
+  const badge = LOGIN_BADGE[effectiveStatus];
+  // Both launches are blocked while a flow is active or a launch is in flight. The
+  // QUICK (auto) login additionally needs a stored password; the IN-BROWSER (manual)
+  // login does not — the operator types/scans/approves in the streamed browser.
+  const active = status === 'running' || status === 'needs_2fa' || status === 'needs_manual';
+  const busy = active || launching;
+  const canQuickLaunch = !busy && account.has_password;
   const isRetry = status === 'failed';
+
+  function launchInBrowser() {
+    setBrowserDismissed(false);
+    void login.launch('manual');
+  }
 
   return (
     <div className="login-cell">
       <div className="login-cell__row">
-        <Badge tone={badge.tone} dot={status === 'running'}>
-          {status === 'ok' && <IconCheck size={11} />}
-          {status === 'failed' && <IconAlert size={11} />}
+        <Badge tone={badge.tone} dot={effectiveStatus === 'running'}>
+          {effectiveStatus === 'ok' && <IconCheck size={11} />}
+          {effectiveStatus === 'failed' && <IconAlert size={11} />}
           {badge.label}
         </Badge>
 
-        {!account.has_password ? (
-          <span className="login-cell__hint">
-            <IconLock size={12} /> Set a password to enable login
-          </span>
-        ) : (
+        <div className="login-cell__actions">
+          {account.has_password && (
+            <Button
+              variant={isRetry ? 'secondary' : 'primary'}
+              size="sm"
+              type="button"
+              loading={launching}
+              disabled={!canQuickLaunch}
+              onClick={() => void login.launch()}
+              aria-label={isRetry ? `Retry quick login for ${account.name}` : `Quick log in ${account.name}`}
+            >
+              {isRetry ? <IconRefresh size={14} /> : <IconPlay size={14} />}
+              {isRetry ? 'Retry' : busy ? 'Logging in…' : 'Quick login'}
+            </Button>
+          )}
+
+          {/* In-browser (manual) login — works WITHOUT a stored password and is the
+              path for OTP / QR scan / push-approve. Opens the streamed remote browser. */}
           <Button
-            variant={isRetry ? 'secondary' : 'primary'}
+            variant={account.has_password ? 'ghost' : 'primary'}
             size="sm"
             type="button"
-            loading={launching}
-            disabled={!canLaunch}
-            onClick={() => void login.launch()}
-            aria-label={isRetry ? `Retry login for ${account.name}` : `Log in ${account.name}`}
+            disabled={busy}
+            onClick={launchInBrowser}
+            aria-label={`Log in ${account.name} in a remote browser`}
+            title="Open a real browser you drive from here — for codes, QR scan, or phone approval"
           >
-            {isRetry ? <IconRefresh size={14} /> : <IconPlay size={14} />}
-            {isRetry ? 'Retry' : active ? 'Logging in…' : 'Login'}
+            <IconTerminal size={14} /> Log in in browser
           </Button>
-        )}
+        </div>
       </div>
+
+      {!account.has_password && status === 'idle' && (
+        <span className="login-cell__hint">
+          <IconLock size={12} /> No saved password — use “Log in in browser”, or set a password for quick login.
+        </span>
+      )}
 
       {/* Mid-flow 2FA relay — revealed only when the server parks at needs_2fa. */}
       {status === 'needs_2fa' && <TwoFactorRelay login={login} accountName={account.name} />}
+
+      {/* Remote browser — shown while the manual login is parked at needs_manual. */}
+      {status === 'needs_manual' && !browserDismissed && (
+        <RemoteBrowser
+          accountId={account.id}
+          accountName={account.name}
+          detail={detail}
+          onClose={() => setBrowserDismissed(true)}
+        />
+      )}
 
       {/* A failure reason or a server prompt (e.g. "check your phone"). */}
       {detail && (status === 'failed' || status === 'needs_2fa') && (

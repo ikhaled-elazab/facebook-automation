@@ -166,11 +166,13 @@ function assertExactKeys(obj, expected, label) {
 
 // ── The documented contracts (mirror types.ts + serializers.js EXACTLY) ───────
 
-// Account = serializeAccount allowlist + has_password/has_proxy_password + branch_count.
+// Account = serializeAccount allowlist + has_password/has_proxy_password +
+// has_session/session_updated_at (durable login state) + branch_count.
 const ACCOUNT_KEYS = [
   'id', 'name', 'email', 'session_file', 'user_agent', 'locale', 'timezone_id',
   'proxy_server', 'proxy_username', 'daily_action_cap', 'created_at', 'updated_at',
-  'enabled', 'has_password', 'has_proxy_password', 'branch_count',
+  'enabled', 'has_password', 'has_proxy_password', 'has_session', 'session_updated_at',
+  'branch_count',
 ];
 
 // Branch (list shape) = serializeBranch allowlist (NO child arrays).

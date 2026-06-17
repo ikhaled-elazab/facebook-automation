@@ -24,7 +24,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { ApiError } from '../api/ApiError';
 import { errorMessage } from './format';
-import type { LoginSessionView, LoginStatus } from '../api/types';
+import type { LoginMode, LoginSessionView, LoginStatus } from '../api/types';
 
 const POLL_MS = 2000;
 
@@ -35,7 +35,9 @@ function isTerminal(status: LoginStatus): boolean {
 
 /** Active states keep the poller alive. */
 function isActive(status: LoginStatus): boolean {
-  return status === 'running' || status === 'needs_2fa';
+  // needs_manual is active too: a headed browser is open and we must keep polling
+  // until the operator finishes (the flow flips to ok) or it times out (failed).
+  return status === 'running' || status === 'needs_2fa' || status === 'needs_manual';
 }
 
 export interface AccountLoginState {
@@ -48,8 +50,9 @@ export interface AccountLoginState {
   submitting2fa: boolean;
   /** Transport / 409 / unexpected error surfaced to the row (not a field error). */
   error: string | null;
-  /** Start (or restart) a login for this account. */
-  launch: () => Promise<void>;
+  /** Start (or restart) a login for this account. Pass 'manual' for the headed,
+   * human-driven flow (OTP / QR / push); omit (or 'auto') for the headless form. */
+  launch: (mode?: LoginMode) => Promise<void>;
   /** Submit a 2FA code mid-flow; resumes polling on success. */
   submit2fa: (code: string) => Promise<void>;
   /** Clear a surfaced error (e.g. when the operator edits the 2FA input). */
@@ -145,28 +148,53 @@ export function useAccountLogin(accountId: number): AccountLoginState {
     };
   }, [stopTimer]);
 
-  const launch = useCallback(async () => {
-    if (launching || isActive(statusRef.current)) return;
-    setError(null);
-    setDetail(null);
-    setLaunching(true);
-    try {
-      const res = await api.login.launch(accountId);
-      apply(res);
-    } catch (err) {
-      if (err instanceof ApiError && err.isAuth) return;
-      if (err instanceof ApiError && err.isConflict) {
-        // Server already has a login session for this account. Switch to polling
-        // the existing flow rather than reporting a hard failure.
-        setError('A login is already running for this account — showing its progress.');
-        setStatus('running');
-        return;
+  // On mount, sync with the server's CURRENT login-flow status ONCE. Without this
+  // the hook starts at 'idle' and only polls while already active, so a page
+  // refresh would drop an in-progress login (running / needs_2fa / needs_manual)
+  // from the UI even though it is still live server-side. The durable "logged in"
+  // badge comes from account.has_session; this effect resumes an ACTIVE flow (and
+  // re-arms the poller via the status-driven effect above when the view is active).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.login.status(accountId);
+        if (!cancelled) apply(res);
+      } catch {
+        // Ignore — the baseline still renders from account.has_session, and the
+        // operator can relaunch. A transient read must not surface as a flow error.
       }
-      setError(errorMessage(err));
-    } finally {
-      if (mounted.current) setLaunching(false);
-    }
-  }, [accountId, apply, launching]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId, apply]);
+
+  const launch = useCallback(
+    async (mode?: LoginMode) => {
+      if (launching || isActive(statusRef.current)) return;
+      setError(null);
+      setDetail(null);
+      setLaunching(true);
+      try {
+        const res = await api.login.launch(accountId, mode);
+        apply(res);
+      } catch (err) {
+        if (err instanceof ApiError && err.isAuth) return;
+        if (err instanceof ApiError && err.isConflict) {
+          // Server already has a login session for this account. Switch to polling
+          // the existing flow rather than reporting a hard failure.
+          setError('A login is already running for this account — showing its progress.');
+          setStatus('running');
+          return;
+        }
+        setError(errorMessage(err));
+      } finally {
+        if (mounted.current) setLaunching(false);
+      }
+    },
+    [accountId, apply, launching]
+  );
 
   const submit2fa = useCallback(
     async (code: string) => {

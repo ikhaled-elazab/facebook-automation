@@ -76,6 +76,11 @@ export interface Account {
   // Derived "secret is set" booleans — the ciphertext never leaves the server.
   has_password: boolean;
   has_proxy_password: boolean;
+  // Durable login state: whether a saved session (storageState) file exists — the
+  // restart-proof "logged in" signal (the in-memory login status only tracks an
+  // active attempt). `session_updated_at` is the file's mtime (epoch ms) or null.
+  has_session: boolean;
+  session_updated_at: number | null;
   // List-projection convenience: how many branches this account has. Present on
   // the list endpoint so the UI can show a branch-count badge without N+1 reads.
   branch_count: number;
@@ -378,13 +383,19 @@ export interface EventsQuery {
 
 /**
  * Login lifecycle for one account.
- *   idle      — no session started yet (or never launched).
- *   running   — the headless login is driving the browser; keep polling.
- *   needs_2fa — parked awaiting a 2FA/SMS code from the operator (reveal input).
- *   ok        — logged in; the session file is now valid.
- *   failed    — the attempt failed (see `detail` for the reason).
+ *   idle        — no session started yet (or never launched).
+ *   running     — the login is driving the browser; keep polling.
+ *   needs_2fa   — parked awaiting a 2FA/SMS code from the operator (reveal input).
+ *   needs_manual — a HEADED browser is open and the operator must finish login in
+ *                  it (authenticator OTP, QR scan, or push-approve). Resolves when
+ *                  the browser reaches a logged-in state — no code is relayed.
+ *   ok          — logged in; the session file is now valid.
+ *   failed      — the attempt failed (see `detail` for the reason).
  */
-export type LoginStatus = 'idle' | 'running' | 'needs_2fa' | 'ok' | 'failed';
+export type LoginStatus = 'idle' | 'running' | 'needs_2fa' | 'needs_manual' | 'ok' | 'failed';
+
+/** How a login flow is being driven (mirrors the server's LoginSession mode). */
+export type LoginMode = 'auto' | 'manual';
 
 /**
  * Secret-free public session view (server: LoginSession.toPublic()). The control
@@ -395,6 +406,8 @@ export interface LoginSessionView {
   account_name: string;
   status: LoginStatus;
   detail: string | null;
+  /** Flow shape of the active/last session; null for the never-launched idle view. */
+  mode: LoginMode | null;
   /** Epoch ms the login launched; null before the first launch. */
   started_at: number | null;
   /** Epoch ms the login reached a terminal state (ok|failed); null while active. */

@@ -8,10 +8,17 @@
  *   node login.js                        → shows account list, prompts which to login
  *   node login.js --account account1     → login specific account by name
  *   node login.js --all                  → loop through every account sequentially
+ *   node login.js --manual --account x   → MANUAL: open a HEADED browser and let a
+ *                                          human finish login (password / OTP / QR
+ *                                          scan / push-approve). The session file is
+ *                                          captured automatically once logged in.
+ *                                          Needs a display (your Mac, not a bare VPS).
  *
  * Credential FALLBACKS (used only when the DB has no stored password_enc):
  *   FB_EMAIL="x@x.com" FB_PASS="secret" node login.js --account account1
  *   (and an interactive prompt if neither the DB nor env supply a value).
+ *   In --manual mode credentials are OPTIONAL — the human supplies them in the
+ *   browser — so no prompt blocks the flow.
  *
  * SECURITY: the plaintext password is decrypted into a local, handed to the login
  * flow for a single field-fill, and allowed to go out of scope. It is NEVER
@@ -133,39 +140,64 @@ function resolveProxyPassword(env) {
 
 /**
  * Log in one account using the DB envelope + DB settings, driving the resumable
- * LoginSession with the terminal 2FA prompt as the CLI fallback.
+ * LoginSession. In AUTO mode the terminal 2FA prompt is the CLI fallback; in
+ * MANUAL mode a headed browser is opened for a human to finish login in.
  * @param {object} acctRow a db.getAccountById/listAccounts row (snake_case)
  * @param {object} settings db.getSettings() row
+ * @param {object} [opts]
+ * @param {boolean} [opts.manual] open a headed browser and wait for a human to
+ *   complete login (OTP / QR / push) instead of driving the form automatically.
  * @returns {Promise<boolean>} true on success
  */
-async function loginAccount(acctRow, settings) {
+async function loginAccount(acctRow, settings, opts = {}) {
+  const manual = !!opts.manual;
   console.log(`\n${'─'.repeat(50)}`);
-  console.log(`[LOGIN] Account: ${acctRow.name}`);
+  console.log(`[LOGIN] Account: ${acctRow.name}${manual ? ' (manual / headed)' : ''}`);
 
   // Build the camelCase envelope (the single shared snake→camel mapping, reused
   // from the worker's loadConfig so login + worker never drift).
   const env = accountEnvelope(acctRow);
 
-  // Email: DB → env → prompt. Password: DB(decrypt) → env → hidden prompt.
+  // Email: DB → env → prompt. In MANUAL mode email is just a convenience pre-fill,
+  // so we never block on it (the human can type it in the opened browser).
   let email = env.email || process.env.FB_EMAIL || '';
-  if (!email) email = await ask(`[LOGIN:${env.name}] Facebook email / phone: `);
+  if (!email && !manual) email = await ask(`[LOGIN:${env.name}] Facebook email / phone: `);
 
-  let password = await resolvePassword(env, true);
-  if (!password) {
-    // resolvePassword already prompts when interactive, so an empty here means
-    // the operator entered nothing — fail loudly rather than submit a blank.
-    console.error(`[LOGIN:${env.name}] No password available (DB/env/prompt all empty). Aborting.`);
-    return false;
+  // Password: required in AUTO mode (DB → env → hidden prompt). In MANUAL mode it
+  // is OMITTED entirely — the human owns the credential step in the browser.
+  let password = '';
+  if (!manual) {
+    password = await resolvePassword(env, true);
+    if (!password) {
+      // resolvePassword already prompts when interactive, so an empty here means
+      // the operator entered nothing — fail loudly rather than submit a blank.
+      console.error(
+        `[LOGIN:${env.name}] No password available (DB/env/prompt all empty). Aborting.`
+      );
+      return false;
+    }
   }
 
   const proxyPassword = resolveProxyPassword(env);
 
-  console.log(`[LOGIN:${env.name}] Launching ${settings.headless ? 'headless ' : ''}browser...`);
+  // Manual logins MUST be headed so the operator can see + drive the browser. We
+  // force headless off via a settings clone (the same override the control plane
+  // applies server-side); auto logins honor the DB headless setting.
+  const launchSettings = manual ? { ...settings, headless: false } : settings;
+  console.log(
+    `[LOGIN:${env.name}] Launching ${launchSettings.headless ? 'headless ' : ''}browser...`
+  );
+  if (manual) {
+    console.log(
+      `[LOGIN:${env.name}] Finish login in the opened window (password / OTP / QR / approve). ` +
+        'The session is saved automatically once you reach the feed.'
+    );
+  }
 
   const session = new LoginSession(
-    { account: env, email, password, settings, proxyPassword },
+    { account: env, email, password, settings, proxyPassword, mode: manual ? 'manual' : 'auto' },
     {
-      launchBrowser: () => defaultLaunchBrowser(settings),
+      launchBrowser: () => defaultLaunchBrowser(launchSettings),
       logger: (msg) => console.log(msg),
     }
   );
@@ -173,9 +205,9 @@ async function loginAccount(acctRow, settings) {
   // copy which IT clears after the field-fill.
   password = null;
 
-  const finalState = await session.run({
-    interactiveAsk: (q) => ask(q), // CLI 2FA fallback: block on the terminal prompt
-  });
+  // MANUAL mode ignores interactiveAsk (it polls the browser for a logged-in
+  // state); AUTO mode uses the terminal 2FA prompt fallback.
+  const finalState = await session.run(manual ? {} : { interactiveAsk: (q) => ask(q) });
 
   if (finalState === LOGIN_STATES.OK) {
     console.log(`[LOGIN:${env.name}] ✓ Login OK.`);
@@ -190,6 +222,7 @@ async function loginAccount(acctRow, settings) {
 async function main() {
   const args = process.argv.slice(2);
   const flagAll = args.includes('--all');
+  const flagManual = args.includes('--manual');
   const nameIdx = args.indexOf('--account');
   const targetName = nameIdx !== -1 ? args[nameIdx + 1] : null;
 
@@ -236,7 +269,7 @@ async function main() {
   }
 
   for (const account of targets) {
-    await loginAccount(account, settings);
+    await loginAccount(account, settings, { manual: flagManual });
   }
 
   console.log('\n[LOGIN] Done. Run "npm start" to launch the bot.');

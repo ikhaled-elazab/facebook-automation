@@ -480,7 +480,9 @@ test('public session view exposes no secret-shaped fields', async () => {
   assert.ok(!/password|_enc|secret|654321|123456/i.test(serialized), 'no secret-shaped field in the public view');
   assert.deepStrictEqual(
     Object.keys(view).sort(),
-    ['account_name', 'detail', 'finished_at', 'started_at', 'status'].sort(),
+    // `mode` ('auto'|'manual') is a benign flow-shape flag — secret-free, and the
+    // regex assertion above still guards against any secret-shaped value leaking.
+    ['account_name', 'detail', 'finished_at', 'mode', 'started_at', 'status'].sort(),
     'public view is exactly the intended allowlist'
   );
 });
