@@ -427,3 +427,7 @@ export type LoginStatusResponse = LoginEnvelope;
 
 /** POST /login/2fa response — 200; wrapped view (status after the code is applied). */
 export type Login2faResponse = LoginEnvelope;
+
+/** POST /login/cancel response — 200; wrapped view (terminal `failed` after the abort,
+ * or the current view when nothing was live — the endpoint is idempotent). */
+export type LoginCancelResponse = LoginEnvelope;

@@ -48,6 +48,8 @@ export interface AccountLoginState {
   launching: boolean;
   /** A 2FA submit is in flight. */
   submitting2fa: boolean;
+  /** A cancel POST is in flight (the Cancel button shows a spinner). */
+  cancelling: boolean;
   /** Transport / 409 / unexpected error surfaced to the row (not a field error). */
   error: string | null;
   /** Start (or restart) a login for this account. Pass 'manual' for the headed,
@@ -55,6 +57,9 @@ export interface AccountLoginState {
   launch: (mode?: LoginMode) => Promise<void>;
   /** Submit a 2FA code mid-flow; resumes polling on success. */
   submit2fa: (code: string) => Promise<void>;
+  /** Cancel an in-progress login (running | needs_2fa | needs_manual). Aborts the
+   * server-side flow; the resulting terminal state stops the poller. */
+  cancel: () => Promise<void>;
   /** Clear a surfaced error (e.g. when the operator edits the 2FA input). */
   clearError: () => void;
 }
@@ -64,6 +69,7 @@ export function useAccountLogin(accountId: number): AccountLoginState {
   const [detail, setDetail] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [submitting2fa, setSubmitting2fa] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const mounted = useRef(true);
@@ -216,14 +222,35 @@ export function useAccountLogin(accountId: number): AccountLoginState {
     [accountId, apply, submitting2fa]
   );
 
+  const cancel = useCallback(async () => {
+    // Only meaningful while a flow is live; the server is idempotent regardless,
+    // but skipping the call when nothing is active avoids a pointless round-trip.
+    if (cancelling || !isActive(statusRef.current)) return;
+    setError(null);
+    setCancelling(true);
+    try {
+      const res = await api.login.cancel(accountId);
+      // The view comes back terminal (failed) — applying it flips `status` out of
+      // the active set, which tears the poll loop down via the status-driven effect.
+      apply(res);
+    } catch (err) {
+      if (err instanceof ApiError && err.isAuth) return;
+      setError(errorMessage(err));
+    } finally {
+      if (mounted.current) setCancelling(false);
+    }
+  }, [accountId, apply, cancelling]);
+
   return {
     status,
     detail,
     launching,
     submitting2fa,
+    cancelling,
     error,
     launch,
     submit2fa,
+    cancel,
     clearError,
   };
 }

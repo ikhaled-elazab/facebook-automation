@@ -554,6 +554,27 @@ class LoginSession {
     } else if (this._settings.use_proxy) {
       this._log(`[LOGIN:${a.name}] use_proxy=true but no proxy configured — using host IP.`);
     }
+
+    // MANUAL re-login: seed the context from the previously-saved session file so
+    // Facebook's long-lived `datr` browser-identity cookie (and any "remembered
+    // device" trust) is carried over — FB then sees a RETURNING device instead of a
+    // brand-new one every time, which is the main reason a security check fires on
+    // every login. Manual-only: if the saved cookies are still valid the page lands
+    // already logged-in and the cookie-based completion check resolves it cleanly
+    // (the automated path expects the login form, so it must NOT pre-seed state).
+    // Best-effort + validated: a missing/corrupt file is simply ignored (fresh start).
+    if (this._mode === 'manual' && a.sessionFile) {
+      const sp = path.resolve(a.sessionFile);
+      try {
+        if (fs.existsSync(sp) && fs.statSync(sp).size > 0) {
+          JSON.parse(fs.readFileSync(sp, 'utf8')); // validate shape; throws if corrupt
+          opts.storageState = sp;
+          this._log(`[LOGIN:${a.name}] Reusing saved browser identity (device recognition).`);
+        }
+      } catch {
+        /* unreadable/corrupt session file — start fresh rather than fail the login */
+      }
+    }
     return opts;
   }
 

@@ -87,6 +87,21 @@ function loginControlRouter({ csrfProtection, loginControl }) {
     })
   );
 
+  // Cancel an in-progress login mid-flow (operator clicks "Cancel" while it is
+  // "Logging in…"). Mutation → CSRF. No body. The control layer aborts the live
+  // session (clean browser/stream teardown, terminal `failed`) and is IDEMPOTENT:
+  // a no-op returning the current public view when nothing is live. 404 only if
+  // the ACCOUNT does not exist. 200 (settled now) rather than 202 (still async).
+  router.post(
+    '/:id/login/cancel',
+    csrfProtection,
+    asyncHandler(async (req, res) => {
+      const { id } = parseOrThrow(idParamSchema, req.params);
+      const view = await control.cancel(id);
+      res.json({ login: view });
+    })
+  );
+
   return router;
 }
 

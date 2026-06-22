@@ -48,6 +48,7 @@ import {
   IconCheck,
   IconAlert,
   IconTerminal,
+  IconX,
 } from '../components/icons';
 import { RemoteBrowser } from '../components/RemoteBrowser';
 import type { Account, LoginStatus } from '../api/types';
@@ -227,7 +228,7 @@ const LOGIN_BADGE: Record<LoginStatus, { tone: 'ok' | 'warn' | 'danger' | 'info'
 
 function LoginCell({ account }: { account: Account }) {
   const login = useAccountLogin(account.id);
-  const { status, detail, launching, error } = login;
+  const { status, detail, launching, cancelling, error } = login;
   // The remote-browser modal can be dismissed without ending the (server-side)
   // login; a new manual launch re-opens it. It only renders while needs_manual.
   const [browserDismissed, setBrowserDismissed] = useState(false);
@@ -290,6 +291,24 @@ function LoginCell({ account }: { account: Account }) {
           >
             <IconTerminal size={14} /> Log in in browser
           </Button>
+
+          {/* Cancel — only while a login is in flight (running / needs 2FA / finish
+              in browser). Aborts the server-side flow (closes the browser, no orphan)
+              and frees the account to be relaunched immediately. */}
+          {active && (
+            <Button
+              variant="danger"
+              size="sm"
+              type="button"
+              loading={cancelling}
+              disabled={cancelling}
+              onClick={() => void login.cancel()}
+              aria-label={`Cancel login for ${account.name}`}
+              title="Stop this login attempt"
+            >
+              <IconX size={14} /> Cancel
+            </Button>
+          )}
         </div>
       </div>
 

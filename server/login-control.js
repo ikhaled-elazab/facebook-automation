@@ -266,6 +266,34 @@ function createLoginControl(deps = {}) {
   }
 
   /**
+   * Cancel an IN-PROGRESS login for a single account (operator-driven, mid-flow).
+   * The interactive counterpart to abortAll(): aborts just this account's live
+   * session via LoginSession.abort() — which rejects any parked 2FA wait, tears
+   * down the remote stream, closes chromium (no orphan), and lands the session in
+   * terminal `failed`. The single-flight slot is then free, so the account is
+   * immediately re-launchable.
+   *
+   * IDEMPOTENT by design (a Cancel button may be clicked late or twice): when
+   * there is no live session — none ever started, or it already settled
+   * (ok/failed) — this is a no-op that returns the current public view rather
+   * than an error. A genuinely missing ACCOUNT is still a 404.
+   * @param {number} accountId
+   * @returns {Promise<object>} the public session view after cancellation.
+   * @throws {NotFoundError} if the account itself does not exist.
+   */
+  async function cancel(accountId) {
+    if (!data.getAccountById(accountId)) throw new NotFoundError('Account not found');
+    const session = sessions.get(accountId);
+    if (!session || TERMINAL_STATES.has(session.status)) {
+      // Nothing live to cancel — return the stable current view (status() yields
+      // the idle view when no session exists, or the terminal view otherwise).
+      return status(accountId);
+    }
+    await session.abort();
+    return session.toPublic();
+  }
+
+  /**
    * Abort all in-flight login sessions (graceful shutdown). Best-effort; never
    * throws. Used by server shutdown so no chromium is orphaned on process exit.
    * @returns {Promise<void>}
@@ -275,7 +303,7 @@ function createLoginControl(deps = {}) {
     await Promise.all(live.map((s) => s.abort().catch(() => {})));
   }
 
-  return { launch, status, provide2fa, getStream, abortAll };
+  return { launch, status, provide2fa, getStream, cancel, abortAll };
 }
 
 module.exports = { createLoginControl };

@@ -104,8 +104,10 @@ function makeManualFake({ completeAfter = 0, neverComplete = false } = {}) {
     async close() {},
   };
 
+  const captured = {};
   const browser = {
-    async newContext() {
+    async newContext(opts) {
+      captured.contextOpts = opts;
       return context;
     },
     async close() {
@@ -114,7 +116,7 @@ function makeManualFake({ completeAfter = 0, neverComplete = false } = {}) {
     },
   };
 
-  return { browser, fills, closed, cookieCalls: () => cookieCalls };
+  return { browser, fills, closed, captured, cookieCalls: () => cookieCalls };
 }
 
 /** Build a manual-mode LoginSession over the fake (no DB, hand-crafted envelope). */
@@ -276,6 +278,42 @@ test('manual stream is exposed while parked and torn down on abort', async () =>
   await session.abort();
   await runP;
   assert.ok(stream.stopped, 'stream stopped on abort');
+});
+
+// 4d — manual re-login reuses a saved session file as the browser identity (datr),
+// so Facebook sees a returning device instead of a new one on every login.
+test('manual re-login seeds the context from the saved session for device recognition', async () => {
+  const sessionFile = tmpSessionFile();
+  // A pre-existing, valid saved session (storageState JSON) must be reused.
+  fs.writeFileSync(
+    sessionFile,
+    JSON.stringify({ cookies: [{ name: 'datr', value: 'device-id' }], origins: [] })
+  );
+  const fake = makeManualFake({ completeAfter: 0 });
+  const session = makeManualSession(fake, { sessionFile, manualPollMs: 10 });
+
+  await session.run();
+
+  assert.equal(
+    fake.captured.contextOpts.storageState,
+    path.resolve(sessionFile),
+    'manual login seeds the context from the saved session (carries datr)'
+  );
+});
+
+// 4e — with NO prior session file, nothing is seeded (the genuine first login).
+test('first manual login (no saved session) does not seed storageState', async () => {
+  const sessionFile = tmpSessionFile(); // never written before run()
+  const fake = makeManualFake({ completeAfter: 0 });
+  const session = makeManualSession(fake, { sessionFile, manualPollMs: 10 });
+
+  await session.run();
+
+  assert.equal(
+    fake.captured.contextOpts.storageState,
+    undefined,
+    'a first login starts from a clean context (no file to reuse)'
+  );
 });
 
 // 5 — control layer relaxes creds in manual mode, runs headless, and attaches a stream.

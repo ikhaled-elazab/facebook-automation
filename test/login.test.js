@@ -233,6 +233,16 @@ function makeFakeLoginControl() {
       cur.finished_at = Date.now();
       return { account_name: cur.account_name, status: cur.status, detail: cur.detail, started_at: cur.started_at, finished_at: cur.finished_at };
     },
+    async cancel(id) {
+      if (!db.getAccountById(id)) throw new NotFoundError('Account not found');
+      const cur = map.get(id);
+      // Idempotent: nothing live to cancel → return the stable current view.
+      if (!cur || cur.status === 'ok' || cur.status === 'failed') return this.status(id);
+      cur.status = 'failed';
+      cur.detail = 'Aborted.';
+      cur.finished_at = Date.now();
+      return { account_name: cur.account_name, status: cur.status, detail: cur.detail, started_at: cur.started_at, finished_at: cur.finished_at };
+    },
     async abortAll() {},
   };
 }
@@ -590,6 +600,55 @@ test('route: launch on an account with no stored password is 400 (not 500)', asy
   assert.strictEqual(r.body.error.code, 'BAD_REQUEST');
 });
 
+test('route: cancel without CSRF is 403', async () => {
+  const id = seedAccount('rt-cancel-csrf');
+  const c = await loginClient();
+  const r = await c.req('POST', `/api/accounts/${id}/login/cancel`, { body: {} }); // no csrf
+  assert.strictEqual(r.status, 403, 'cancel is a mutation → CSRF required');
+});
+
+test('route: cancel aborts an in-progress login → 200 + failed; idempotent', async () => {
+  const id = seedAccount('rt-cancel');
+  const c = await loginClient();
+
+  let token = await c.csrf();
+  const launch = await c.req('POST', `/api/accounts/${id}/login`, { csrf: token });
+  assert.strictEqual(launch.status, 202);
+  assert.strictEqual(launch.body.login.status, 'needs_2fa');
+
+  token = await c.csrf();
+  const cancel = await c.req('POST', `/api/accounts/${id}/login/cancel`, { csrf: token });
+  assert.strictEqual(cancel.status, 200, 'cancel is accepted');
+  assert.strictEqual(cancel.body.login.status, 'failed', 'cancelled login lands terminal failed');
+  assert.match(cancel.body.login.detail || '', /abort/i, 'detail explains the abort');
+
+  // A cancelled login is immediately re-launchable (single-flight slot freed).
+  token = await c.csrf();
+  const relaunch = await c.req('POST', `/api/accounts/${id}/login`, { csrf: token });
+  assert.strictEqual(relaunch.status, 202, 'account is re-launchable right after cancel');
+
+  // Idempotent: cancelling the freshly-relaunched login again is a clean 200.
+  token = await c.csrf();
+  const again = await c.req('POST', `/api/accounts/${id}/login/cancel`, { csrf: token });
+  assert.strictEqual(again.status, 200, 'second cancel is a clean 200');
+  assert.strictEqual(again.body.login.status, 'failed');
+});
+
+test('route: cancel with no active session is a 200 no-op; missing account is 404', async () => {
+  const id = seedAccount('rt-cancel-idle');
+  const c = await loginClient();
+
+  let token = await c.csrf();
+  const noop = await c.req('POST', `/api/accounts/${id}/login/cancel`, { csrf: token });
+  assert.strictEqual(noop.status, 200, 'cancel with nothing live is a clean no-op');
+  assert.strictEqual(noop.body.login.status, 'idle');
+
+  token = await c.csrf();
+  const missing = await c.req('POST', '/api/accounts/999999/login/cancel', { csrf: token });
+  assert.strictEqual(missing.status, 404);
+  assert.strictEqual(missing.body.error.code, 'NOT_FOUND');
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Real registry (createLoginControl): credential decrypt + 400 paths exercised
 // against the GENUINE control layer (no fake), using a fake browser launcher.
@@ -633,6 +692,39 @@ test('real registry: concurrent launch is rejected; no-password account throws B
   assert.throws(() => control.launch(noPassId), BadRequestError, 'no-password launch throws BadRequest');
 
   await control.abortAll();
+});
+
+test('real registry: cancel aborts a live login → failed + browser closed (no orphan); idempotent', async () => {
+  const { NotFoundError } = require('../server/errors');
+  const id = seedAccount('reg-cancel');
+  const script = { fills: {}, logs: [], closed: { count: 0 },
+    urlAfterSubmit: 'https://www.facebook.com/checkpoint/', has2faInput: true };
+  const control = createLoginControl({
+    launchBrowser: () => makeFakeBrowser(script),
+    logger: { warn() {}, error() {} },
+  });
+
+  control.launch(id);
+  await waitFor(() => control.status(id).status === 'needs_2fa', 1000);
+
+  // Cancel the in-flight login: real LoginSession.abort() must reject the parked
+  // 2FA wait, close the browser, and land terminal `failed`.
+  const view = await control.cancel(id);
+  assert.strictEqual(view.status, 'failed', 'cancelled session is terminal failed');
+  assert.match(view.detail || '', /abort/i, 'detail explains the abort');
+  assert.strictEqual(script.closed.count >= 1, true, 'browser closed on cancel (no orphaned chromium)');
+
+  // Idempotent: cancelling an already-terminal session returns the terminal view.
+  const again = await control.cancel(id);
+  assert.strictEqual(again.status, 'failed', 'second cancel returns the terminal view, no throw');
+
+  // Cancel on a never-started account is a no-op idle view (not an error).
+  const fresh = seedAccount('reg-cancel-idle');
+  const idleView = await control.cancel(fresh);
+  assert.strictEqual(idleView.status, 'idle', 'cancel with no session returns the idle view');
+
+  // Cancel on a missing account is a clean NotFound (parity with status/provide2fa).
+  await assert.rejects(() => control.cancel(999999), NotFoundError, 'missing account → NotFound');
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

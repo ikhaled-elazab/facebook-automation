@@ -16,6 +16,7 @@ import type {
   EventsQuery,
   EventsResponse,
   Login2faResponse,
+  LoginCancelResponse,
   LoginLaunchResponse,
   LoginMode,
   LoginResponse,
@@ -149,6 +150,7 @@ export const api = {
   //   POST /api/accounts/:id/login        → launch (202 Accepted, treated as success)
   //   GET  /api/accounts/:id/login/status → poll (running | needs_2fa)
   //   POST /api/accounts/:id/login/2fa    → submit the 2FA code
+  //   POST /api/accounts/:id/login/cancel → abort an in-progress login (idempotent)
   // A concurrent launch returns 409 (one session per account) — the caller surfaces
   // it via ApiError.isConflict. The stored password is never sent here; the server
   // reads password_enc set via the account editor.
@@ -171,6 +173,13 @@ export const api = {
       request<Login2faResponse>(`/api/accounts/${accountId}/login/2fa`, {
         method: 'POST',
         body: { code },
+      }).then((r) => r.login),
+
+    // Cancel an in-progress login. Idempotent server-side (a no-op returns the
+    // current view), so the caller can fire it without first checking liveness.
+    cancel: (accountId: number): Promise<LoginSessionView> =>
+      request<LoginCancelResponse>(`/api/accounts/${accountId}/login/cancel`, {
+        method: 'POST',
       }).then((r) => r.login),
   },
 
