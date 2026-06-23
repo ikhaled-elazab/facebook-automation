@@ -20,7 +20,7 @@
 
 const path = require('path');
 const logger = require('../logger.js');
-const { extractUserIdFromProfileUrl } = require('../core/state.js');
+const { extractUserIdFromProfileUrl, cleanFbUrl } = require('../core/state.js');
 
 /**
  * True if `href` is a POST permalink (not a comment link). Mirrors the strict
@@ -63,6 +63,30 @@ function chooseLatestPostHref(articleHrefLists) {
     if (found) return found;
   }
   return null;
+}
+
+/**
+ * Derive the stable post id + the CANONICAL post URL from a permalink found in the
+ * feed.
+ *
+ * Why this exists (regression): getLatestPost used to discard the real link and
+ * REBUILD `permalink.php?story_fbid=<id>&id=<page>` using the page's VANITY handle
+ * as `id` (e.g. `id=aba.ADahab.Real.Estate`). With a pfbid token + a vanity id that
+ * URL does not load the post — every downstream action navigated to it and failed
+ * (page.goto timeouts, "Like/Comment/Share control not found"). We instead keep the
+ * URL Facebook actually serves (…/posts/<id> or permalink.php?story_fbid=…) and only
+ * strip volatile tracking params via cleanFbUrl.
+ *
+ * @param {string} rawUrl post permalink (may carry __cft__/__tn__ tracking params)
+ * @returns {{postId: string|null, postUrl: string}}
+ */
+function parsePostFromHref(rawUrl) {
+  const idMatch =
+    rawUrl.match(/story_fbid=([^&]+)/) ||
+    rawUrl.match(/\/posts\/([^/?&]+)/) ||
+    rawUrl.match(/\/permalink\/(\d+)/) ||
+    rawUrl.match(/set=pcb\.(\d+)/);
+  return { postId: idMatch ? idMatch[1] : null, postUrl: cleanFbUrl(rawUrl) };
 }
 
 /**
@@ -134,32 +158,24 @@ async function getLatestPost(page, account, h) {
   const aIdx = feed.articleHrefLists.findIndex((hrefs) => (hrefs || []).includes(rawUrl));
   if (aIdx >= 0) postText = feed.articleTexts[aIdx] || '';
 
-  // Extract post ID — handle pfbid encoded IDs too, with DOM attribute fallback
-  const idMatch =
-    rawUrl.match(/story_fbid=([^&]+)/) ||
-    rawUrl.match(/\/posts\/([^/?&]+)/) ||
-    rawUrl.match(/\/permalink\/(\d+)/) ||
-    rawUrl.match(/set=pcb\.(\d+)/);
+  // Keep the CANONICAL post URL Facebook serves (cleaned of tracking params). Do
+  // NOT rebuild permalink.php with the page's vanity id — that produced a URL the
+  // post wouldn't load from, breaking Like/Comment/Share. See parsePostFromHref.
+  const { postUrl } = parsePostFromHref(rawUrl);
+  let postId = parsePostFromHref(rawUrl).postId;
 
-  let postId = idMatch ? idMatch[1] : null;
-
-  // DOM attribute fallback if URL regex couldn't extract an ID
+  // DOM attribute fallback if the URL had no extractable id.
   if (!postId) {
-    postId = await page.evaluate((url) => {
+    postId = await page.evaluate(() => {
       const articles = Array.from(document.querySelectorAll('[role="article"]'));
       for (const article of articles) {
         const storyId = article.getAttribute('data-story-id') || article.getAttribute('data-ftid');
         if (storyId) return storyId;
       }
-      return url; // last resort: use full URL as ID
-    }, rawUrl);
+      return null;
+    });
   }
-
-  // Always reconstruct as a clean permalink URL
-  const profileId =
-    new URL(account.targetPageUrl).searchParams.get('id') ||
-    account.targetPageUrl.split('/').filter(Boolean).pop();
-  const postUrl = `https://www.facebook.com/permalink.php?story_fbid=${postId}&id=${profileId}`;
+  if (!postId) postId = rawUrl; // last resort: use the URL itself as the id
 
   logger.log(account.name, 'MONITOR', `Latest post ID: ${postId} | URL: ${postUrl}`);
   return { postId, postUrl, postText };
@@ -428,7 +444,8 @@ module.exports = {
   getLatestProfilePost,
   getLatestPostInGroup,
   getLatestPostInGroupByUser,
-  // Exported for unit testing the deterministic newest-post selection.
+  // Exported for unit testing the deterministic newest-post selection + URL parse.
   chooseLatestPostHref,
   isPostLink,
+  parsePostFromHref,
 };

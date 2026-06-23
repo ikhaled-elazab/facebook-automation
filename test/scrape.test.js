@@ -25,7 +25,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-const { chooseLatestPostHref } = require('../fb/scrape.js');
+const { chooseLatestPostHref, parsePostFromHref } = require('../fb/scrape.js');
 
 const NEW = 'https://www.facebook.com/aba.ADahab.Real.Estate/posts/pfbid032ma8LyNEWEST?__cft__[0]=AAA&__tn__=%2CO';
 const NEW_COMMENT = 'https://www.facebook.com/aba.ADahab.Real.Estate/posts/pfbid032ma8LyNEWEST?comment_id=999';
@@ -74,4 +74,30 @@ test('chooseLatestPostHref: handles empty / missing inputs safely', () => {
 test('chooseLatestPostHref: recognizes story_fbid and permalink.php forms', () => {
   const storyFbid = 'https://www.facebook.com/permalink.php?story_fbid=pfbidSTORY&id=page';
   assert.strictEqual(chooseLatestPostHref([[storyFbid]]), storyFbid);
+});
+
+// ── parsePostFromHref: keep the canonical URL, never rebuild permalink.php ───────
+// Regression: getLatestPost rebuilt permalink.php?story_fbid=<pfbid>&id=<vanity>,
+// a URL the post would not load from — Like/Comment/Share then couldn't find their
+// controls. The fix keeps the real /posts/ URL, only stripping tracking params.
+
+test('parsePostFromHref keeps the canonical /posts/ URL and extracts the pfbid', () => {
+  const raw =
+    'https://www.facebook.com/aba.ADahab.Real.Estate/posts/pfbid032ma8LyNEWEST?__cft__[0]=AAA&__tn__=%2CO%2CP-R';
+  const { postId, postUrl } = parsePostFromHref(raw);
+  assert.strictEqual(postId, 'pfbid032ma8LyNEWEST');
+  assert.strictEqual(
+    postUrl,
+    'https://www.facebook.com/aba.ADahab.Real.Estate/posts/pfbid032ma8LyNEWEST'
+  );
+  assert.doesNotMatch(postUrl, /permalink\.php/, 'must NOT rebuild into permalink.php');
+  assert.doesNotMatch(postUrl, /__cft__|__tn__/, 'must strip tracking params');
+});
+
+test('parsePostFromHref preserves a real permalink.php link and its story_fbid', () => {
+  const raw = 'https://www.facebook.com/permalink.php?story_fbid=pfbidSTORY&id=12345&__cft__[0]=x';
+  const { postId, postUrl } = parsePostFromHref(raw);
+  assert.strictEqual(postId, 'pfbidSTORY');
+  assert.match(postUrl, /permalink\.php\?story_fbid=pfbidSTORY&id=12345/);
+  assert.doesNotMatch(postUrl, /__cft__/);
 });
