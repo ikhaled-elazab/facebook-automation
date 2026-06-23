@@ -23,6 +23,49 @@ const logger = require('../logger.js');
 const { extractUserIdFromProfileUrl } = require('../core/state.js');
 
 /**
+ * True if `href` is a POST permalink (not a comment link). Mirrors the strict
+ * filter proven in getLatestProfilePost — comment links carry comment_id= and are
+ * excluded so a comment's timestamp link on some post is never mistaken for the
+ * post itself.
+ * @param {string} href absolute URL
+ * @returns {boolean}
+ */
+function isPostLink(href) {
+  return (
+    !!href &&
+    !href.includes('comment_id=') &&
+    (href.includes('/posts/') ||
+      href.includes('story_fbid=') ||
+      href.includes('/permalink/') ||
+      href.includes('permalink.php'))
+  );
+}
+
+/**
+ * Pure selection: given the anchor hrefs of each feed article in TOP-DOWN order,
+ * return the newest post's permalink — the first post-like link in the first
+ * article that has one.
+ *
+ * Why this exists (regression): the old code scrolled ~5400px into the feed and
+ * then took the FIRST post link across the WHOLE document (`unique[0]`). Facebook
+ * VIRTUALIZES (unmounts) the top of the feed as you scroll, so `unique[0]` became
+ * whatever older post happened to remain mounted — non-deterministic (one page
+ * returned three different "latest" ids across consecutive cycles). Selecting the
+ * first article that exposes a permalink, read from the top WITHOUT scrolling past
+ * it, is deterministic: it is always the topmost (newest) post.
+ *
+ * @param {Array<string[]>} articleHrefLists per-article anchor hrefs, feed order
+ * @returns {string|null} the newest post permalink, or null if none found
+ */
+function chooseLatestPostHref(articleHrefLists) {
+  for (const hrefs of articleHrefLists || []) {
+    const found = (hrefs || []).find(isPostLink);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
  * Find the latest post on the account's target page and return its id/url/text.
  * @param {import('playwright').Page} page
  * @param {object} account hydrated account (uses .name, .targetPageUrl)
@@ -36,34 +79,60 @@ async function getLatestPost(page, account, h) {
   await page.goto(account.targetPageUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await h.randomDelay(4000, 7000);
 
-  // Scroll past header/photos into the posts feed
-  for (let i = 0; i < 6; i++) {
-    await page.evaluate(() => window.scrollBy(0, 900));
-    await h.randomDelay(1500, 2500);
+  // Read the newest post from the TOP of the feed. We deliberately do NOT scroll
+  // deep before reading: Facebook virtualizes (unmounts) the top posts as you
+  // scroll down, so the old "scroll 5400px then take unique[0]" approach returned
+  // a RANDOM still-mounted (older) post. The newest post is the first article and
+  // is present on load — we just wait for it to render, then read top-down.
+  try {
+    await page.waitForSelector('[role="article"]', { timeout: 20000 });
+  } catch {
+    // No articles yet — the scan below still runs (and retries with a small nudge)
+    // before failing, so a slow render does not strand us.
+  }
+  await h.randomDelay(1500, 2500);
+
+  // Gather per-article anchor hrefs + text in feed order, plus a flat list of all
+  // anchors as a last-resort fallback. All DOM reads happen in one evaluate.
+  const readFeed = () =>
+    page.evaluate(() => {
+      const articles = Array.from(document.querySelectorAll('[role="article"]'));
+      return {
+        articleHrefLists: articles.map((art) =>
+          Array.from(art.querySelectorAll('a[href]')).map((a) => a.href)
+        ),
+        articleTexts: articles.map((art) => (art.innerText || '').slice(0, 600)),
+        allHrefs: Array.from(document.querySelectorAll('a[href]')).map((a) => a.href),
+      };
+    });
+
+  let feed = await readFeed();
+  let rawUrl = chooseLatestPostHref(feed.articleHrefLists);
+
+  // Some layouts hydrate posts only after a small interaction. If nothing surfaced,
+  // nudge ONCE and return to the very top (still never scrolling past the newest).
+  if (!rawUrl) {
+    await page.evaluate(() => window.scrollBy(0, 800));
+    await h.randomDelay(2000, 3000);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await h.randomDelay(1000, 2000);
+    feed = await readFeed();
+    rawUrl = chooseLatestPostHref(feed.articleHrefLists);
   }
 
-  const postLinks = await page.$$eval('a[href]', (anchors) =>
-    anchors
-      .map((a) => a.href)
-      .filter(
-        (href) =>
-          href.includes('/posts/') ||
-          href.includes('/permalink/') ||
-          href.includes('story_fbid=') ||
-          href.includes('permalink.php') ||
-          href.includes('/videos/') ||
-          href.includes('/photos/') ||
-          /set=pcb\.\d+/.test(href)
-      )
-  );
+  // Last resort: scan ALL anchors (the old behavior) so a structural change never
+  // regresses us to a hard "no post found".
+  if (!rawUrl) rawUrl = chooseLatestPostHref([feed.allHrefs]);
 
-  if (!postLinks.length) {
+  if (!rawUrl) {
     logger.warn(account.name, 'MONITOR', 'No post links found.');
     throw new Error('No post links found');
   }
 
-  const unique = [...new Set(postLinks)];
-  const rawUrl = unique[0];
+  // Post text from the SAME article we took the link from (best-effort, ≤600 chars).
+  let postText = '';
+  const aIdx = feed.articleHrefLists.findIndex((hrefs) => (hrefs || []).includes(rawUrl));
+  if (aIdx >= 0) postText = feed.articleTexts[aIdx] || '';
 
   // Extract post ID — handle pfbid encoded IDs too, with DOM attribute fallback
   const idMatch =
@@ -85,12 +154,6 @@ async function getLatestPost(page, account, h) {
       return url; // last resort: use full URL as ID
     }, rawUrl);
   }
-
-  // Extract visible post text from first article (capped at 600 chars)
-  const postText = await page.evaluate(() => {
-    const article = document.querySelector('[role="article"]');
-    return article ? (article.innerText || '').slice(0, 600) : '';
-  });
 
   // Always reconstruct as a clean permalink URL
   const profileId =
@@ -365,4 +428,7 @@ module.exports = {
   getLatestProfilePost,
   getLatestPostInGroup,
   getLatestPostInGroupByUser,
+  // Exported for unit testing the deterministic newest-post selection.
+  chooseLatestPostHref,
+  isPostLink,
 };
