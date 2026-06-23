@@ -1,0 +1,637 @@
+- generic [ref=e5]:
+  - banner:
+    - generic [ref=e6]:
+      - generic:
+        - generic:
+          - button [disabled]:
+            - img
+      - link "فيسبوك" [ref=e7] [cursor=pointer]:
+        - /url: /
+        - img [ref=e8]
+    - generic [ref=e16]:
+      - generic [ref=e17]:
+        - generic:
+          - generic:
+            - generic:
+              - button:
+                - img
+      - generic [ref=e19]:
+        - generic:
+          - img
+        - combobox "بحث في فيسبوك" [ref=e20] [cursor=pointer]
+    - navigation "فيسبوك" [ref=e24]:
+      - list [ref=e25]:
+        - listitem [ref=e26]:
+          - link "الصفحة الرئيسية" [ref=e30] [cursor=pointer]:
+            - /url: /
+            - img [ref=e32]
+        - listitem [ref=e34]:
+          - link "ريلز" [ref=e37] [cursor=pointer]:
+            - /url: /reel/?s=tab
+            - img [ref=e39]
+        - listitem [ref=e42]:
+          - link "الأصدقاء" [ref=e45] [cursor=pointer]:
+            - /url: /friends/
+            - img [ref=e47]
+        - listitem [ref=e49]:
+          - link "Marketplace" [ref=e52] [cursor=pointer]:
+            - /url: /marketplace/?ref=app_tab
+            - img [ref=e54]
+        - listitem [ref=e56]:
+          - link "المجموعات" [ref=e59] [cursor=pointer]:
+            - /url: /groups/
+            - img [ref=e61]
+    - navigation "عناصر التحكم وإعدادات الحساب" [ref=e64]:
+      - button "قائمة فيسبوك" [ref=e68] [cursor=pointer]:
+        - img [ref=e69]
+      - generic [ref=e74]:
+        - button "رسائل 9 غير مقروءة، 9" [ref=e75] [cursor=pointer]:
+          - img [ref=e76]
+        - button [ref=e78] [cursor=pointer]:
+          - generic [ref=e81]:
+            - generic [ref=e82]: 9 دردشة غير مقروءة
+            - generic [ref=e83]: "9"
+      - generic [ref=e87]:
+        - button "إشعارات غير مقروءة، 4" [ref=e88] [cursor=pointer]:
+          - img [ref=e89]
+        - button [ref=e91] [cursor=pointer]:
+          - generic [ref=e92]:
+            - generic [ref=e93]: عدد الإشعارات غير المقروءة
+            - generic [ref=e94]: "4"
+      - button "ملفك الشخصي" [ref=e97] [cursor=pointer]:
+        - generic [ref=e98]:
+          - img "ملفك الشخصي" [ref=e99]
+          - img [ref=e106]
+  - generic [ref=e114]:
+    - navigation "الاختصارات" [ref=e115]:
+      - generic [ref=e118]:
+        - heading "قائمة فيسبوك" [level=2] [ref=e119]
+        - generic [ref=e121]:
+          - generic [ref=e122]:
+            - generic [ref=e123]:
+              - list [ref=e124]:
+                - listitem [ref=e125]:
+                  - link "Sandy Aba Aldahab" [ref=e129] [cursor=pointer]:
+                    - /url: https://www.facebook.com/profile.php?id=61584152732853
+                    - generic [ref=e131]:
+                      - img [ref=e134]
+                      - generic [ref=e143]: Sandy Aba Aldahab
+                - listitem [ref=e144]:
+                  - link "Meta AI" [ref=e148] [cursor=pointer]:
+                    - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fwww.meta.ai%2F%3Futm_source%3Dfacebook_bookmarks%26fbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExU1BoMXhmaUR5d2pmYWpWUXNydGMGYXBwX2lkEDIyMjAzOTE3ODgyMDA4OTIAAR7lq27aYtpigWJgBZs7AYwfbN_2o0ouFe97XVF4M3EQWl5NktH4vkHZatLGsQ_aem_g9YhZLTeCLAuxGGubpr_FA&h=AUAj6cTYmASaN1HvbhaP8qQdrMhX2_1zc1I9x9UNIWUPtKTS30M6mUhhJSVJp6cwLJEdwxAH3UrTgtQJxic_b4iphxBxvAO-tI_TxF-0R8zoUgsS1xR2RmfPwAU963gBnz7rlEDFb1s
+                    - generic [ref=e159]: Meta AI
+                - listitem [ref=e160]:
+                  - link "الأصدقاء" [ref=e164] [cursor=pointer]:
+                    - /url: https://www.facebook.com/friends/
+                    - generic [ref=e175]: الأصدقاء
+                - listitem [ref=e176]:
+                  - link "الذكريات" [ref=e180] [cursor=pointer]:
+                    - /url: https://www.facebook.com/onthisday/?source=bookmark
+                    - generic [ref=e191]: الذكريات
+                - listitem [ref=e192]:
+                  - link "العناصر المحفوظة" [ref=e196] [cursor=pointer]:
+                    - /url: https://www.facebook.com/saved/?cref=28
+                    - generic [ref=e207]: العناصر المحفوظة
+                - listitem [ref=e208]:
+                  - link "المجموعات" [ref=e212] [cursor=pointer]:
+                    - /url: https://www.facebook.com/groups/?ref=bookmarks
+                    - generic [ref=e223]: المجموعات
+                - listitem [ref=e224]:
+                  - link "ريلز" [ref=e228] [cursor=pointer]:
+                    - /url: https://www.facebook.com/reel/?s=tab
+                    - generic [ref=e239]: ريلز
+                - listitem [ref=e240]:
+                  - link "Marketplace" [ref=e244] [cursor=pointer]:
+                    - /url: https://www.facebook.com/marketplace/?ref=bookmark
+                    - generic [ref=e255]: Marketplace
+              - button "عرض المزيد من عناصر الاستكشاف" [ref=e259] [cursor=pointer]:
+                - generic [ref=e261]:
+                  - img [ref=e264]
+                  - generic [ref=e271]: عرض المزيد
+              - separator [ref=e272]
+            - generic [ref=e273]:
+              - heading "اختصاراتك" [level=3] [ref=e283]:
+                - generic [ref=e285]: اختصاراتك
+              - list [ref=e286]:
+                - listitem [ref=e287]:
+                  - link "عقارات التجمع الخامس" [ref=e291] [cursor=pointer]:
+                    - /url: https://www.facebook.com/groups/abomahdy/
+                    - generic [ref=e293]:
+                      - img [ref=e296]
+                      - generic [ref=e305]: عقارات التجمع الخامس
+                - listitem [ref=e306]:
+                  - link "شقق في الرحاب بدون وسيط" [ref=e310] [cursor=pointer]:
+                    - /url: https://www.facebook.com/groups/662664960475713/
+                    - generic [ref=e312]:
+                      - img [ref=e315]
+                      - generic [ref=e324]: شقق في الرحاب بدون وسيط
+                - listitem [ref=e325]:
+                  - link "الرحاب ومدينتى من المالك مباشر بدون عموله" [ref=e329] [cursor=pointer]:
+                    - /url: https://www.facebook.com/groups/951762858827293/
+                    - generic [ref=e331]:
+                      - img [ref=e334]
+                      - generic [ref=e343]: الرحاب ومدينتى من المالك مباشر بدون عموله
+                - listitem [ref=e344]:
+                  - link "الجروب الرسمي لملاك الرحاب ومدينتي" [ref=e348] [cursor=pointer]:
+                    - /url: https://www.facebook.com/groups/3916712695046051/
+                    - generic [ref=e350]:
+                      - img [ref=e353]
+                      - generic [ref=e362]: الجروب الرسمي لملاك الرحاب ومدينتي
+          - contentinfo "فيسبوك" [ref=e364]:
+            - list [ref=e366]:
+              - listitem [ref=e367]:
+                - link "الخصوصية" [ref=e368] [cursor=pointer]:
+                  - /url: /privacy/policy/?entry_point=comet_dropdown
+                - generic [ref=e369]: ·
+              - listitem [ref=e371]:
+                - link "الشروط" [ref=e372] [cursor=pointer]:
+                  - /url: /policies?ref=pf
+                - generic [ref=e373]: ·
+              - listitem [ref=e375]:
+                - link "الإعلانات" [ref=e376] [cursor=pointer]:
+                  - /url: /business/
+                - generic [ref=e377]: ·
+              - listitem [ref=e379]:
+                - link "Ad Choices" [ref=e380] [cursor=pointer]:
+                  - /url: /help/568137493302217
+                  - text: Ad Choices
+                  - img [ref=e382]
+                - generic [ref=e385]: ·
+              - listitem [ref=e387]:
+                - link "ملفات تعريف الارتباط" [ref=e388] [cursor=pointer]:
+                  - /url: /policies/cookies/
+                - generic [ref=e389]: ·
+              - listitem [ref=e391]:
+                - button "المزيد من روابط التذييل" [ref=e392] [cursor=pointer]: المزيد
+    - heading "الصفحة الرئيسية" [level=1] [ref=e393]
+    - main [ref=e394]:
+      - generic [ref=e399]:
+        - region "إنشاء منشور" [ref=e403]:
+          - generic [ref=e404]:
+            - heading "إنشاء منشور" [level=3] [ref=e405]
+            - link "يوميات Sandy Aba Aldahab" [ref=e406] [cursor=pointer]:
+              - /url: https://www.facebook.com/profile.php?id=61584152732853
+              - img [ref=e409]
+            - button "بم تفكر يا Sandy؟" [ref=e413] [cursor=pointer]:
+              - generic [ref=e415]: بم تفكر يا Sandy؟
+            - generic [ref=e416]:
+              - button "فيديو بث مباشر" [ref=e418] [cursor=pointer]
+              - button "صورة/فيديو" [ref=e422] [cursor=pointer]
+              - button "شعور/نشاط" [ref=e426] [cursor=pointer]
+        - feed [ref=e430]:
+          - heading "منشورات الموجز" [level=3] [ref=e431]
+          - generic [ref=e432]:
+            - article [ref=e441]:
+              - generic [ref=e450]:
+                - generic [ref=e452]:
+                  - generic [ref=e453]:
+                    - link [ref=e456] [cursor=pointer]:
+                      - /url: /groups/297608790585064/?__cft__[0]=AZZbnAzUbNIqpJM3OtkJt-xqrvQI9OGPSmYfSRksN5UfOnUgHenO2PcrWjLcVUSJerNqEhAmqUV7HlX3PTH07I2NVriXKEPjM7egJkJMXM3_WS1mDqM6xdxHxmug2k3F6IUlMDJLUYbldqD8DlAbr_vnK5hsBUaZxhSyMx0hIRbrRo_8rX43zruZe-Tjytc1H8YoH4UixaN3aZYTv2qIIqxE&__tn__=%3C%3C%2CP-R
+                      - img [ref=e458]
+                    - link [ref=e467] [cursor=pointer]:
+                      - /url: /groups/297608790585064/user/61587160286954/?__cft__[0]=AZZbnAzUbNIqpJM3OtkJt-xqrvQI9OGPSmYfSRksN5UfOnUgHenO2PcrWjLcVUSJerNqEhAmqUV7HlX3PTH07I2NVriXKEPjM7egJkJMXM3_WS1mDqM6xdxHxmug2k3F6IUlMDJLUYbldqD8DlAbr_vnK5hsBUaZxhSyMx0hIRbrRo_8rX43zruZe-Tjytc1H8YoH4UixaN3aZYTv2qIIqxE&__tn__=%3C%2CP-R
+                      - img [ref=e471]
+                  - generic [ref=e476]:
+                    - heading "عقارات التجمع بدون سمسار" [level=4] [ref=e480]:
+                      - link "عقارات التجمع بدون سمسار" [ref=e484] [cursor=pointer]:
+                        - /url: /groups/297608790585064/?__cft__[0]=AZZbnAzUbNIqpJM3OtkJt-xqrvQI9OGPSmYfSRksN5UfOnUgHenO2PcrWjLcVUSJerNqEhAmqUV7HlX3PTH07I2NVriXKEPjM7egJkJMXM3_WS1mDqM6xdxHxmug2k3F6IUlMDJLUYbldqD8DlAbr_vnK5hsBUaZxhSyMx0hIRbrRo_8rX43zruZe-Tjytc1H8YoH4UixaN3aZYTv2qIIqxE&__tn__=-UC%2CP-R
+                    - generic [ref=e487]:
+                      - link "النسر الذهبى" [ref=e492] [cursor=pointer]:
+                        - /url: /groups/297608790585064/user/61587160286954/?__cft__[0]=AZZbnAzUbNIqpJM3OtkJt-xqrvQI9OGPSmYfSRksN5UfOnUgHenO2PcrWjLcVUSJerNqEhAmqUV7HlX3PTH07I2NVriXKEPjM7egJkJMXM3_WS1mDqM6xdxHxmug2k3F6IUlMDJLUYbldqD8DlAbr_vnK5hsBUaZxhSyMx0hIRbrRo_8rX43zruZe-Tjytc1H8YoH4UixaN3aZYTv2qIIqxE&__tn__=%2CP-R
+                      - generic [ref=e494]: ·
+                      - link "١ س" [ref=e499] [cursor=pointer]:
+                        - /url: https://www.facebook.com/groups/297608790585064/?multi_permalinks=3082710305408218&hoisted_section_header_type=recently_seen&__cft__[0]=AZZbnAzUbNIqpJM3OtkJt-xqrvQI9OGPSmYfSRksN5UfOnUgHenO2PcrWjLcVUSJerNqEhAmqUV7HlX3PTH07I2NVriXKEPjM7egJkJMXM3_WS1mDqM6xdxHxmug2k3F6IUlMDJLUYbldqD8DlAbr_vnK5hsBUaZxhSyMx0hIRbrRo_8rX43zruZe-Tjytc1H8YoH4UixaN3aZYTv2qIIqxE&__tn__=%2CO%2CP-R
+                      - generic [ref=e501]: ·
+                      - img "تمت المشاركة مع مجموعة عامة" [ref=e506]
+                  - button "الإجراءات لهذا المنشور بواسطة النسر الذهبى" [ref=e514] [cursor=pointer]:
+                    - img [ref=e515]
+                  - link "إخفاء منشور من النسر الذهبى" [ref=e519] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e520]
+                - generic [ref=e530]: محتاج شقة ثلاث غرف تمليك فى التجمع رينج 5.00.000
+                - generic [ref=e537]:
+                  - generic [ref=e538]:
+                    - button "أعجبني" [ref=e539] [cursor=pointer]
+                    - button "تفاعل" [ref=e544] [cursor=pointer]:
+                      - img [ref=e545]
+                  - button "كتابة تعليق" [ref=e548] [cursor=pointer]:
+                    - generic [ref=e553]: ٣
+                  - button "يمكنك إرسال هذا إلى الأصدقاء أو نشره على ملفك الشخصي." [ref=e555] [cursor=pointer]
+            - article [ref=e568]:
+              - generic [ref=e577]:
+                - generic [ref=e579]:
+                  - link "MetaEgy Agency، مشاهدة القصة" [ref=e583] [cursor=pointer]:
+                    - /url: /stories/122105453432677501/UzpfSVNDOjIwNTc2ODk5MTQ4NTAyMjg=/?view_single=false&__cft__[0]=AZbnL8pJ3mLqcn7ipO1-oeIGWCEYtUpih8ybyHi2vpGiHdf450qpHIG__pAsEAgtPv0v-KRGZpRn4-htxhz34t1M8i9Ct7C3UKMCXlUZPfL8clHDvUGCgpq76qspE7AXhjLiJzIAknXx-87vZ3FRCssYY6m2QFp5c4nOkHJyvymmh6AVBxmescN1D5PSK-PASiadxLgswGcCiDYPJAXdhWCH5xPn8M83hBFWLkj8DrnyD8zyJTyEQaBdeoZC8Z93Uy2w_xHeN39eDIbpWF4aXOmKACMSCeALSiajpcCyw0f87kyKG4HYlbrRlmAEqPCYyuXwozNLUcntsH9huaLbr17ZhXEiN0kKw_yI5d34pmvRVQ&__tn__=%3C%3C%2CP-R
+                    - generic [ref=e584]:
+                      - img "MetaEgy Agency، مشاهدة القصة" [ref=e585]
+                      - generic [ref=e591]:
+                        - generic [ref=e594]: مؤشر حالة الاتصال
+                        - generic [ref=e595]: نشط
+                  - generic [ref=e597]:
+                    - heading "MetaEgy Agency" [level=4] [ref=e601]:
+                      - link "MetaEgy Agency" [ref=e606] [cursor=pointer]:
+                        - /url: https://www.facebook.com/profile.php?id=61570325055813&__cft__[0]=AZbnL8pJ3mLqcn7ipO1-oeIGWCEYtUpih8ybyHi2vpGiHdf450qpHIG__pAsEAgtPv0v-KRGZpRn4-htxhz34t1M8i9Ct7C3UKMCXlUZPfL8clHDvUGCgpq76qspE7AXhjLiJzIAknXx-87vZ3FRCssYY6m2QFp5c4nOkHJyvymmh6AVBxmescN1D5PSK-PASiadxLgswGcCiDYPJAXdhWCH5xPn8M83hBFWLkj8DrnyD8zyJTyEQaBdeoZC8Z93Uy2w_xHeN39eDIbpWF4aXOmKACMSCeALSiajpcCyw0f87kyKG4HYlbrRlmAEqPCYyuXwozNLUcntsH9huaLbr17ZhXEiN0kKw_yI5d34pmvRVQ&__tn__=-UC%2CP-R
+                        - generic [ref=e607]: MetaEgy Agency
+                    - generic [ref=e610]:
+                      - link "مُموَّل" [ref=e612] [cursor=pointer]:
+                        - /url: /ads/about/?__cft__[0]=AZbnL8pJ3mLqcn7ipO1-oeIGWCEYtUpih8ybyHi2vpGiHdf450qpHIG__pAsEAgtPv0v-KRGZpRn4-htxhz34t1M8i9Ct7C3UKMCXlUZPfL8clHDvUGCgpq76qspE7AXhjLiJzIAknXx-87vZ3FRCssYY6m2QFp5c4nOkHJyvymmh6AVBxmescN1D5PSK-PASiadxLgswGcCiDYPJAXdhWCH5xPn8M83hBFWLkj8DrnyD8zyJTyEQaBdeoZC8Z93Uy2w_xHeN39eDIbpWF4aXOmKACMSCeALSiajpcCyw0f87kyKG4HYlbrRlmAEqPCYyuXwozNLUcntsH9huaLbr17ZhXEiN0kKw_yI5d34pmvRVQ&__tn__=%2CP-R
+                      - generic [ref=e614]: ·
+                      - img "تمت المشاركة مع العامة" [ref=e619]
+                  - button "الإجراءات لهذا المنشور بواسطة MetaEgy Agency" [ref=e627] [cursor=pointer]:
+                    - img [ref=e628]
+                  - link "إخفاء منشور من MetaEgy Agency" [ref=e632] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e633]
+                - generic [ref=e635]:
+                  - generic [ref=e643]:
+                    - generic [ref=e644]: "\"ابني سجل بالغلط!!… صرفت نظر!!… مسجلتش أصلاً!!\""
+                    - generic [ref=e645]:
+                      - text: الردود اللي بتدفع فيها آلاف كل شهر… وفي الآخر لـ Leads مش حقيقية
+                      - img "❌" [ref=e647]
+                      - text: ...
+                      - button "عرض المزيد" [ref=e648] [cursor=pointer]
+                  - generic [ref=e649]:
+                    - group "Video player" [ref=e669]:
+                      - button "تشغيل الفيديو" [ref=e672] [cursor=pointer]
+                    - button "نموذج - فريق كامل لمتابعة يومية على الليدز والكواليتي واي مشكله بتقابلك ✅ - اشتغلنا علي اكتر من 6500 كامبين في مصر والخليج واوربا ✅ تسجيل" [ref=e676] [cursor=pointer]:
+                      - generic [ref=e678]:
+                        - generic [ref=e679]:
+                          - generic [ref=e682]: نموذج
+                          - generic [ref=e684]:
+                            - generic [ref=e689]:
+                              - text: "- فريق كامل لمتابعة يومية على الليدز والكواليتي واي مشكله بتقابلك"
+                              - img "✅" [ref=e691]
+                            - generic [ref=e695]:
+                              - text: "- اشتغلنا علي اكتر من 6500 كامبين في مصر والخليج واوربا"
+                              - img "✅" [ref=e697]
+                        - button "تسجيل" [ref=e701]:
+                          - generic [ref=e704]: تسجيل
+                - generic [ref=e711]:
+                  - generic [ref=e712]:
+                    - button "أعجبني" [ref=e713] [cursor=pointer]:
+                      - generic [ref=e719]: ١٤٧
+                    - button "تفاعل" [ref=e720] [cursor=pointer]:
+                      - img [ref=e721]
+                  - button "كتابة تعليق" [ref=e724] [cursor=pointer]:
+                    - generic [ref=e729]: ١٧
+                  - toolbar "تعرف على الأشخاص الذين تفاعلوا مع هذا" [ref=e731]:
+                    - 'button "أعجبني: ١٣٨ شخصًا" [ref=e736] [cursor=pointer]'
+            - article [ref=e745]:
+              - generic [ref=e754]:
+                - generic [ref=e757]:
+                  - heading "أشخاص قد تعرفهم" [level=3] [ref=e758]:
+                    - generic [ref=e759]:
+                      - img [ref=e762]
+                      - text: أشخاص قد تعرفهم
+                  - button "الإجراءات التي يمكن اتخاذها لهذا المنشور" [ref=e766] [cursor=pointer]:
+                    - img [ref=e767]
+                - generic [ref=e771]:
+                  - generic:
+                    - button [disabled]:
+                      - img
+                  - region "أشخاص قد تعرفهم" [ref=e772]:
+                    - generic [ref=e774]:
+                      - generic [ref=e781]:
+                        - generic [ref=e783]:
+                          - link [ref=e786] [cursor=pointer]:
+                            - /url: /friends/suggestions/?profile_id=61582736361865
+                            - img [ref=e787]
+                          - link "Bassem Dahab" [ref=e796] [cursor=pointer]:
+                            - /url: /friends/suggestions/?profile_id=61582736361865
+                          - grid [ref=e801]:
+                            - row "صورة ملف Passant Abaaldahab الشخصي الموجود ضمن الأصدقاء المشترَكين صورة ملف Malak Aba Aldahab الشخصي الموجود ضمن الأصدقاء المشترَكين رابط لرؤية الملف الشخصي للجميع" [ref=e803]:
+                              - cell "صورة ملف Passant Abaaldahab الشخصي الموجود ضمن الأصدقاء المشترَكين" [ref=e804]:
+                                - link "صورة ملف Passant Abaaldahab الشخصي الموجود ضمن الأصدقاء المشترَكين" [ref=e807] [cursor=pointer]:
+                                  - /url: https://www.facebook.com/profile.php?id=61583631420544&__tn__=%3C
+                                  - img "Passant Abaaldahab" [ref=e809]
+                              - cell "صورة ملف Malak Aba Aldahab الشخصي الموجود ضمن الأصدقاء المشترَكين" [ref=e813]:
+                                - link "صورة ملف Malak Aba Aldahab الشخصي الموجود ضمن الأصدقاء المشترَكين" [ref=e816] [cursor=pointer]:
+                                  - /url: https://www.facebook.com/profile.php?id=61583988567744&__tn__=%3C
+                                  - img "Malak Aba Aldahab" [ref=e818]
+                              - button "رابط لرؤية الملف الشخصي للجميع" [ref=e822] [cursor=pointer]:
+                                - img [ref=e823]:
+                                  - cell [ref=e824]
+                                  - cell [ref=e825]
+                                - img [ref=e828]
+                            - button "‏١٥‏ صديقًا مشتركًا" [ref=e835] [cursor=pointer]:
+                              - generic [ref=e837]: ‏١٥‏ صديقًا مشتركًا
+                          - button "إضافة صديق \"Bassem Dahab\"" [ref=e839] [cursor=pointer]:
+                            - generic [ref=e840]:
+                              - img [ref=e841]
+                              - generic [ref=e844]: إضافة صديق
+                        - button "إزالة التوصية لأجل Bassem Dahab" [ref=e846] [cursor=pointer]:
+                          - img [ref=e847]
+                      - generic [ref=e854]:
+                        - generic [ref=e856]:
+                          - link [ref=e859] [cursor=pointer]:
+                            - /url: /friends/suggestions/?profile_id=61586607362619
+                            - img [ref=e860]
+                          - link "Fares Mohamed" [ref=e869] [cursor=pointer]:
+                            - /url: /friends/suggestions/?profile_id=61586607362619
+                          - button "إضافة صديق \"Fares Mohamed\"" [ref=e873] [cursor=pointer]:
+                            - generic [ref=e874]:
+                              - img [ref=e875]
+                              - generic [ref=e878]: إضافة صديق
+                        - button "إزالة التوصية لأجل Fares Mohamed" [ref=e880] [cursor=pointer]:
+                          - img [ref=e881]
+                      - generic [ref=e888]:
+                        - generic [ref=e890]:
+                          - link [ref=e893] [cursor=pointer]:
+                            - /url: /friends/suggestions/?profile_id=61590565180596
+                            - img [ref=e894]
+                          - link "Fatma Sami" [ref=e903] [cursor=pointer]:
+                            - /url: /friends/suggestions/?profile_id=61590565180596
+                          - button "إضافة صديق \"Fatma Sami\"" [ref=e907] [cursor=pointer]:
+                            - generic [ref=e908]:
+                              - img [ref=e909]
+                              - generic [ref=e912]: إضافة صديق
+                        - button "إزالة التوصية لأجل Fatma Sami" [ref=e914] [cursor=pointer]:
+                          - img [ref=e915]
+                      - generic [ref=e922]:
+                        - generic [ref=e924]:
+                          - link [ref=e927] [cursor=pointer]:
+                            - /url: /friends/suggestions/?profile_id=61570872849042
+                            - img [ref=e928]
+                          - link "احدث انواع الالمونتال والسكوريت والزجاج في للتواصل في جميع محافظات مصر" [ref=e937] [cursor=pointer]:
+                            - /url: /friends/suggestions/?profile_id=61570872849042
+                          - button "إضافة صديق \"احدث انواع الالمونتال والسكوريت والزجاج في للتواصل في جميع محافظات مصر\"" [ref=e941] [cursor=pointer]:
+                            - generic [ref=e942]:
+                              - img [ref=e943]
+                              - generic [ref=e946]: إضافة صديق
+                        - button "إزالة التوصية لأجل احدث انواع الالمونتال والسكوريت والزجاج في للتواصل في جميع محافظات مصر" [ref=e948] [cursor=pointer]:
+                          - img [ref=e949]
+                      - generic [ref=e956]:
+                        - generic [ref=e958]:
+                          - link [ref=e961] [cursor=pointer]:
+                            - /url: /friends/suggestions/?profile_id=61588329241057
+                            - img [ref=e962]
+                          - link [ref=e971] [cursor=pointer]:
+                            - /url: /friends/suggestions/?profile_id=61588329241057
+                            - text: Omar Ellithy
+                          - button [ref=e976] [cursor=pointer]:
+                            - generic [ref=e978]: يتابعه ‏١٫٦ ألف‏
+                          - button [ref=e980] [cursor=pointer]:
+                            - generic [ref=e981]:
+                              - img [ref=e982]
+                              - generic [ref=e985]: إضافة صديق
+                        - button [ref=e987] [cursor=pointer]:
+                          - img [ref=e988]
+                      - generic [ref=e995]:
+                        - generic [ref=e997]:
+                          - link [ref=e1000] [cursor=pointer]:
+                            - /url: /friends/suggestions/?profile_id=61575821585930
+                            - img [ref=e1001]
+                          - link [ref=e1010] [cursor=pointer]:
+                            - /url: /friends/suggestions/?profile_id=61575821585930
+                            - text: احمد مختار الرومى
+                          - grid [ref=e1015]:
+                            - row [ref=e1017]:
+                              - cell [ref=e1018]:
+                                - link [ref=e1021] [cursor=pointer]:
+                                  - /url: https://www.facebook.com/profile.php?id=61588525111105&__tn__=%3C
+                                  - img [ref=e1023]
+                              - button [ref=e1027] [cursor=pointer]:
+                                - img [ref=e1028]:
+                                  - cell [ref=e1029]
+                                  - cell [ref=e1030]
+                                - img [ref=e1033]
+                            - button [ref=e1040] [cursor=pointer]:
+                              - generic [ref=e1042]: صديق واحد مشترك
+                          - button [ref=e1044] [cursor=pointer]:
+                            - generic [ref=e1045]:
+                              - img [ref=e1046]
+                              - generic [ref=e1049]: إضافة صديق
+                        - button [ref=e1051] [cursor=pointer]:
+                          - img [ref=e1052]
+                      - generic [ref=e1059]:
+                        - generic [ref=e1061]:
+                          - link [ref=e1064] [cursor=pointer]:
+                            - /url: /friends/suggestions/?profile_id=61577319104406
+                            - img [ref=e1065]
+                          - link [ref=e1074] [cursor=pointer]:
+                            - /url: /friends/suggestions/?profile_id=61577319104406
+                            - text: A7MED MA7MOUD
+                          - button [ref=e1078] [cursor=pointer]:
+                            - generic [ref=e1079]:
+                              - img [ref=e1080]
+                              - generic [ref=e1083]: إضافة صديق
+                        - button [ref=e1085] [cursor=pointer]:
+                          - img [ref=e1086]
+                      - generic [ref=e1091]:
+                        - status [ref=e1093]
+                        - generic [ref=e1094]:
+                          - status [ref=e1095]
+                          - status [ref=e1096]
+                  - button "العناصر التالية" [ref=e1099] [cursor=pointer]:
+                    - img [ref=e1100]
+                - link "عرض الكل" [ref=e1103] [cursor=pointer]:
+                  - /url: /friends/
+                  - generic [ref=e1106]: عرض الكل
+            - generic [ref=e1108]:
+              - article [ref=e1109]:
+                - status "جارٍ التحميل..." [ref=e1110]
+              - article [ref=e1123]:
+                - status "جارٍ التحميل..." [ref=e1124]
+    - complementary [ref=e1137]:
+      - generic [ref=e1141]:
+        - generic [ref=e1143]:
+          - generic [ref=e1147]:
+            - heading "مُموَّل" [level=3] [ref=e1156]:
+              - generic [ref=e1158]: مُموَّل
+            - generic [ref=e1159]:
+              - generic [ref=e1164]:
+                - link "300 Scholarships Available for Master's Degrees apply.unicaf.org" [ref=e1165] [cursor=pointer]:
+                  - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fapply.unicaf.org%2Fuel%2Fnational-technology-day%3Futm_source%3DFacebook%26utm_medium%3DFacebook_Right_Column%26utm_campaign%3DFB-UEL-Tech300-Egypt-NoTargeting-13-05-2026%26utm_content%3DTech300-NoTargeting%26campaign_id%3D6994442934436%26adset_id%3D6994442934236%26ad_id%3D6994442935236%26utm_id%3D6994442934436%26utm_term%3D6994442934236%26fbclid%3DIwZXh0bgNhZW0BMABhZGlkAAAGXMw8m_RicmlkETFTUGgxeGZpRHl3amZhalZRc3J0YwZhcHBfaWQQMjIyMDM5MTc4ODIwMDg5MgABHpl6dbA59ctbdOTKoG5aswtvmKLZjG8jKLxS1wlbAeDMneAXSqNBlH0Q4XA9_aem_02vwI41Ag-tG-NBGOcn7IQ&h=AUAj6cTYmASaN1HvbhaP8qQdrMhX2_1zc1I9x9UNIWUPtKTS30M6mUhhJSVJp6cwLJEdwxAH3UrTgtQJxic_b4iphxBxvAO-tI_TxF-0R8zoUgsS1xR2RmfPwAU963gBnz7rlEDFb1s&__tn__=*I&c[0]=AUAliMt9ONnBKQVrxU3l3nCq3Otaa1-wXgMv2IuBmyFilDVEHOloxoyFg-HMyrS5vY50GBavaTTCirhAvKA7Ai_cng0NgQaXDNKg8M7cai7SwEZqUc2vhIO9WSCmKhrc-1mDIW0V70ZkwMl1_R7YR62CQzWj1lCaTu00IYcWdgtQ4FMvTt5VC5noES9FORFP3s9z91UhjycGgEEaaH23-wY
+                  - generic [ref=e1170]:
+                    - img [ref=e1172]
+                    - generic [ref=e1174]:
+                      - generic [ref=e1177]: 300 Scholarships Available for Master's Degrees
+                      - generic [ref=e1181]: apply.unicaf.org
+                - button "فتح قائمة محتوى Unicaf Egypt المُموَّل" [ref=e1184] [cursor=pointer]:
+                  - img [ref=e1185]
+              - generic [ref=e1192]:
+                - link "New Surplus Cessna Parts! preferredairparts.com" [ref=e1193] [cursor=pointer]:
+                  - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fwww.preferredairparts.com%2F%3Futm_medium%3Dpaid%26utm_source%3Dfb%26utm_id%3D6251395578510%26utm_content%3D6251395579510%26utm_term%3D6251395579110%26utm_campaign%3D6251395578510%26fbclid%3DIwZXh0bgNhZW0BMABhZGlkAAAvx8k_G_JicmlkETFTUGgxeGZpRHl3amZhalZRc3J0YwZhcHBfaWQQMjIyMDM5MTc4ODIwMDg5MgABHpl6dbA59ctbdOTKoG5aswtvmKLZjG8jKLxS1wlbAeDMneAXSqNBlH0Q4XA9_aem_qlYvjGsRd0WbUc7q2lAy2Q&h=AUAj6cTYmASaN1HvbhaP8qQdrMhX2_1zc1I9x9UNIWUPtKTS30M6mUhhJSVJp6cwLJEdwxAH3UrTgtQJxic_b4iphxBxvAO-tI_TxF-0R8zoUgsS1xR2RmfPwAU963gBnz7rlEDFb1s&__tn__=*I&c[0]=AUDXXPP8iPH5MwaIOyktRyxOepYU4ZyWnWDF6Bn62cuhoBcq15BkuWO_R0hx2ay2Yr5gpn47YWZwqIKJEcqX3tTYEeveKlb5cYer5pKy4na-7vqhhZ4d_xn-67QKrZtMc5XamTnwXHBYCHktkCSW93llb70eK-8-l_cFKyvm2V19mGedVKUG3FIKHsohkcJHHpoISPnFJVGVd3gRdyWVUVs
+                  - generic [ref=e1198]:
+                    - img [ref=e1200]
+                    - generic [ref=e1202]:
+                      - generic [ref=e1205]: New Surplus Cessna Parts!
+                      - generic [ref=e1209]: preferredairparts.com
+                - button "فتح قائمة محتوى Preferred Airparts, LLC المُموَّل" [ref=e1212] [cursor=pointer]:
+                  - img [ref=e1213]
+          - generic [ref=e1217]:
+            - generic [ref=e1224]:
+              - heading "طلبات الصداقة" [level=3] [ref=e1226]:
+                - generic [ref=e1228]: طلبات الصداقة
+              - link "عرض الكل" [ref=e1233] [cursor=pointer]:
+                - /url: /friends/
+                - generic [ref=e1234]: عرض الكل
+            - generic [ref=e1239]:
+              - link "عمرو قنديل" [ref=e1241] [cursor=pointer]:
+                - /url: /friends/requests/?profile_id=100002438118521&__tn__=%3C
+                - img [ref=e1243]
+              - generic [ref=e1248]:
+                - generic [ref=e1250]:
+                  - generic [ref=e1253]:
+                    - link "عمرو قنديل" [ref=e1257] [cursor=pointer]:
+                      - /url: /friends/requests/?profile_id=100002438118521
+                    - generic [ref=e1262]:
+                      - generic "منذ يوم" [ref=e1265]: 1ي
+                      - generic [ref=e1268]: إشعار طلب صداقة جديد
+                  - grid [ref=e1274]:
+                    - row "صورة ملف Nada Aba Aldahab الشخصي الموجود ضمن الأصدقاء المشترَكين رابط لرؤية الملف الشخصي للجميع" [ref=e1276]:
+                      - cell "صورة ملف Nada Aba Aldahab الشخصي الموجود ضمن الأصدقاء المشترَكين" [ref=e1277]:
+                        - link "صورة ملف Nada Aba Aldahab الشخصي الموجود ضمن الأصدقاء المشترَكين" [ref=e1280] [cursor=pointer]:
+                          - /url: https://www.facebook.com/profile.php?id=61588525111105&__tn__=%3C
+                          - img "Nada Aba Aldahab" [ref=e1282]
+                      - button "رابط لرؤية الملف الشخصي للجميع" [ref=e1286] [cursor=pointer]:
+                        - img [ref=e1287]:
+                          - cell [ref=e1288]
+                          - cell [ref=e1289]
+                        - img [ref=e1292]
+                    - button "صديق واحد مشترك" [ref=e1299] [cursor=pointer]
+                - generic [ref=e1302]:
+                  - button "تأكيد" [ref=e1304] [cursor=pointer]:
+                    - generic [ref=e1307]: تأكيد
+                  - button "حذف" [ref=e1309] [cursor=pointer]:
+                    - generic [ref=e1312]: حذف
+        - generic [ref=e1316]:
+          - generic [ref=e1323]:
+            - heading "جهات الاتصال" [level=3] [ref=e1325]:
+              - generic [ref=e1327]: جهات الاتصال
+            - generic [ref=e1332]:
+              - button "ابحث باستخدام الاسم أو المجموعة" [ref=e1335] [cursor=pointer]:
+                - img [ref=e1336]
+              - button "خيارات إضافية لجهات الاتصال" [ref=e1345] [cursor=pointer]:
+                - img [ref=e1346]
+          - list [ref=e1351]:
+            - listitem [ref=e1352]:
+              - link "صورة ملف Meta AI الشخصي Meta AI حساب تم التحقق منه" [ref=e1356] [cursor=pointer]:
+                - /url: /messages/t/36327,2227039302/
+                - generic [ref=e1358]:
+                  - img "صورة ملف Meta AI الشخصي" [ref=e1361]
+                  - generic [ref=e1364]:
+                    - text: Meta AI
+                    - img "حساب تم التحقق منه" [ref=e1367]
+            - listitem [ref=e1370]:
+              - link "Nada Aba Aldahab" [ref=e1376] [cursor=pointer]:
+                - /url: /messages/t/61588525111105/
+                - generic [ref=e1378]:
+                  - img [ref=e1381]
+                  - heading "Nada Aba Aldahab" [level=3] [ref=e1387]:
+                    - generic [ref=e1388]: Nada Aba Aldahab
+            - listitem [ref=e1389]:
+              - link "Laian Aba Aldahab" [ref=e1395] [cursor=pointer]:
+                - /url: /messages/t/61584124204418/
+                - generic [ref=e1397]:
+                  - img [ref=e1400]
+                  - heading "Laian Aba Aldahab" [level=3] [ref=e1406]:
+                    - generic [ref=e1407]: Laian Aba Aldahab
+            - listitem [ref=e1408]:
+              - link "Michael Waheed" [ref=e1414] [cursor=pointer]:
+                - /url: /messages/t/100003634367545/
+                - generic [ref=e1416]:
+                  - generic [ref=e1418]:
+                    - img [ref=e1419]
+                    - generic "وقت آخر نشاط:" [ref=e1424]:
+                      - generic "منذ ٣٩ دقيقة" [ref=e1429]: ٣٩ د
+                  - heading "Michael Waheed" [level=3] [ref=e1432]:
+                    - generic [ref=e1433]: Michael Waheed
+            - listitem [ref=e1434]:
+              - link "Razan Aba Aldahab" [ref=e1440] [cursor=pointer]:
+                - /url: /messages/t/61584099695565/
+                - generic [ref=e1442]:
+                  - img [ref=e1445]
+                  - heading "Razan Aba Aldahab" [level=3] [ref=e1451]:
+                    - generic [ref=e1452]: Razan Aba Aldahab
+            - listitem [ref=e1453]:
+              - link "Talya Aba Aldahab" [ref=e1459] [cursor=pointer]:
+                - /url: /messages/t/61583941921807/
+                - generic [ref=e1461]:
+                  - img [ref=e1464]
+                  - heading "Talya Aba Aldahab" [level=3] [ref=e1470]:
+                    - generic [ref=e1471]: Talya Aba Aldahab
+            - listitem [ref=e1472]:
+              - link "Noha Aba Aldahab" [ref=e1478] [cursor=pointer]:
+                - /url: /messages/t/61583524815117/
+                - generic [ref=e1480]:
+                  - img [ref=e1483]
+                  - heading "Noha Aba Aldahab" [level=3] [ref=e1489]:
+                    - generic [ref=e1490]: Noha Aba Aldahab
+            - listitem [ref=e1491]:
+              - link "Nour Aba Aldahab" [ref=e1497] [cursor=pointer]:
+                - /url: /messages/t/61583682868575/
+                - generic [ref=e1499]:
+                  - img [ref=e1502]
+                  - heading "Nour Aba Aldahab" [level=3] [ref=e1508]:
+                    - generic [ref=e1509]: Nour Aba Aldahab
+            - listitem [ref=e1510]:
+              - link "Hoda Abaaldahab" [ref=e1516] [cursor=pointer]:
+                - /url: /messages/t/61583840784556/
+                - generic [ref=e1518]:
+                  - img [ref=e1521]
+                  - heading "Hoda Abaaldahab" [level=3] [ref=e1527]:
+                    - generic [ref=e1528]: Hoda Abaaldahab
+            - listitem [ref=e1529]:
+              - link "Naghm Aba Aldahab" [ref=e1535] [cursor=pointer]:
+                - /url: /messages/t/61584308965985/
+                - generic [ref=e1537]:
+                  - img [ref=e1540]
+                  - heading "Naghm Aba Aldahab" [level=3] [ref=e1546]:
+                    - generic [ref=e1547]: Naghm Aba Aldahab
+            - listitem [ref=e1548]:
+              - link "Lamis Aba Aldahab" [ref=e1554] [cursor=pointer]:
+                - /url: /messages/t/61584101674960/
+                - generic [ref=e1556]:
+                  - img [ref=e1559]
+                  - heading "Lamis Aba Aldahab" [level=3] [ref=e1565]:
+                    - generic [ref=e1566]: Lamis Aba Aldahab
+            - listitem [ref=e1567]:
+              - link "Sara Aba Aldahab" [ref=e1573] [cursor=pointer]:
+                - /url: /messages/t/61583811037793/
+                - generic [ref=e1575]:
+                  - img [ref=e1578]
+                  - heading "Sara Aba Aldahab" [level=3] [ref=e1584]:
+                    - generic [ref=e1585]: Sara Aba Aldahab
+            - listitem [ref=e1586]:
+              - link "Rital Aba Aldahab" [ref=e1592] [cursor=pointer]:
+                - /url: /messages/t/61584342905035/
+                - generic [ref=e1594]:
+                  - img [ref=e1597]
+                  - heading "Rital Aba Aldahab" [level=3] [ref=e1603]:
+                    - generic [ref=e1604]: Rital Aba Aldahab
+            - listitem [ref=e1605]:
+              - link "Mina Abaaldahab" [ref=e1611] [cursor=pointer]:
+                - /url: /messages/t/61582261574502/
+                - generic [ref=e1613]:
+                  - img [ref=e1616]
+                  - heading "Mina Abaaldahab" [level=3] [ref=e1622]:
+                    - generic [ref=e1623]: Mina Abaaldahab
+            - listitem [ref=e1624]:
+              - link "Esraa Aba Aldahab" [ref=e1630] [cursor=pointer]:
+                - /url: /messages/t/61583526998367/
+                - generic [ref=e1632]:
+                  - img [ref=e1635]
+                  - heading "Esraa Aba Aldahab" [level=3] [ref=e1641]:
+                    - generic [ref=e1642]: Esraa Aba Aldahab
+            - listitem [ref=e1643]:
+              - link "Yara Aba Aldahab" [ref=e1649] [cursor=pointer]:
+                - /url: /messages/t/61584051656402/
+                - generic [ref=e1651]:
+                  - img [ref=e1654]
+                  - heading "Yara Aba Aldahab" [level=3] [ref=e1660]:
+                    - generic [ref=e1661]: Yara Aba Aldahab
+            - listitem [ref=e1662]:
+              - link "Amira Malek" [ref=e1668] [cursor=pointer]:
+                - /url: /messages/t/100081497331704/
+                - generic [ref=e1670]:
+                  - img [ref=e1673]
+                  - heading "Amira Malek" [level=3] [ref=e1679]:
+                    - generic [ref=e1680]: Amira Malek
+        - generic [ref=e1683]:
+          - heading "دردشات جماعية" [level=3] [ref=e1692]:
+            - generic [ref=e1694]: دردشات جماعية
+          - button "إنشاء دردشة جماعية" [ref=e1699] [cursor=pointer]:
+            - generic [ref=e1701]:
+              - img [ref=e1704]
+              - generic [ref=e1710]: إنشاء دردشة جماعية

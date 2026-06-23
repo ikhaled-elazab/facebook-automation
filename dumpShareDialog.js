@@ -76,7 +76,9 @@ async function main() {
   const account = { name, targetPageUrl: branch.targetPageUrl };
   const h = { randomDelay: (a) => new Promise((r) => setTimeout(r, a)) };
 
-  const browser = await chromium.launch({ headless: true });
+  // HEADED=1 opens a visible window (run locally) so you can WATCH what clicking
+  // Share actually does — far better than blind DOM dumps.
+  const browser = await chromium.launch({ headless: !process.env.HEADED });
   try {
     const ctx = await browser.newContext(opts);
     const page = await ctx.newPage();
@@ -200,6 +202,16 @@ async function main() {
     console.log(JSON.stringify(popups.nowHits, null, 2));
     console.log(`\nScreenshot: ${shot}`);
     console.log('=====================================================');
+
+    if (process.env.HEADED) {
+      console.log(
+        '\n[HEADED] Browser stays open ~120s. Watch what the Share click did:\n' +
+          '  - if a Notifications/Messenger panel opened → the click mis-targeted (wrong button)\n' +
+          '  - if a Share menu/dialog opened → note the "Share now" label\n' +
+          'You can also click Share yourself to see the real menu.'
+      );
+      await page.waitForTimeout(120000);
+    }
   } finally {
     await browser.close();
   }

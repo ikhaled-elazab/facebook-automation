@@ -76,15 +76,21 @@ async function shareToOwnProfile(page, postUrl, account, h) {
 
   await h.sleep(3000);
 
-  // "Share now" button — try multiple selectors & text variants
+  // "Share now" button — try multiple selectors & text variants. Includes the
+  // Arabic label "مشاركة الآن" (verified against the live share dialog) — the
+  // account's FB UI renders in Arabic, so the English-only list never matched and
+  // profile-share silently failed at this step.
   let profileOption = null;
   for (const sel of [
     '[aria-label="Share now"]',
     '[aria-label="Share Now"]',
+    '[aria-label="مشاركة الآن"]',
     'div[role="menuitem"]:has-text("Share now")',
     'div[role="option"]:has-text("Share now")',
     'div[role="button"]:has-text("Share now")',
+    'div[role="button"]:has-text("مشاركة الآن")',
     'span:has-text("Share now")',
+    'span:has-text("مشاركة الآن")',
   ]) {
     profileOption = await page.waitForSelector(sel, { timeout: 5000, state: 'visible' }).catch(() => null);
     if (profileOption) break;
