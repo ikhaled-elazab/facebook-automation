@@ -106,41 +106,56 @@ async function main() {
 
     await page.waitForTimeout(3500);
 
-    // Dump every visible menuitem / button / option / link with a label or text.
-    const items = await page.evaluate(() => {
-      const SHARE_HINT = /share|الآن|مشارك|نشر|الملف|الشخصي|now|profile|feed/i;
-      const els = Array.from(
-        document.querySelectorAll('[role="menuitem"],[role="button"],[role="option"],a[role="link"],span')
-      );
-      const out = [];
-      for (const el of els) {
+    // Screenshot for visual confirmation (scp it off the VPS if you want to eyeball it).
+    const path2 = require('path');
+    const shotDir = path2.resolve('logs');
+    require('fs').mkdirSync(shotDir, { recursive: true });
+    const shot = path2.join(shotDir, `share-dialog-${name}.png`);
+    await page.screenshot({ path: shot, fullPage: false }).catch(() => {});
+
+    // Dump the SHARE POPUP contents. Scope to the freshly-opened [role="menu"] /
+    // [role="dialog"], and read each control's FULL innerText (FB nests the label in
+    // child spans, so leaf-only text reading misses "مشاركة الآن"). Use innerText.
+    const popups = await page.evaluate(() => {
+      const visible = (el) => {
         const r = el.getBoundingClientRect();
-        if (r.width === 0 || r.height === 0) continue; // visible only
-        const aria = el.getAttribute('aria-label') || '';
-        const text = el.childElementCount === 0 ? (el.textContent || '').trim() : '';
-        const label = aria || text;
-        if (!label || label.length > 60) continue;
-        out.push({
-          role: el.getAttribute('role') || el.tagName.toLowerCase(),
-          aria,
-          text,
-          hint: SHARE_HINT.test(label),
-        });
-      }
-      // De-dup by role+label; show hinted ones first.
-      const seen = new Set();
-      const uniq = out.filter((o) => {
-        const k = o.role + '|' + (o.aria || o.text);
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      });
-      return uniq.sort((a, b) => Number(b.hint) - Number(a.hint)).slice(0, 40);
+        return r.width > 0 && r.height > 0;
+      };
+      const controlsOf = (root) => {
+        const els = Array.from(
+          root.querySelectorAll('[role="menuitem"],[role="button"],[role="option"],a[role="link"]')
+        );
+        const out = [];
+        const seen = new Set();
+        for (const el of els) {
+          if (!visible(el)) continue;
+          const aria = el.getAttribute('aria-label') || '';
+          const text = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+          const label = aria || text;
+          if (!label) continue;
+          const key = (el.getAttribute('role') || el.tagName) + '|' + label;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push({ role: el.getAttribute('role') || el.tagName.toLowerCase(), aria, text });
+        }
+        return out;
+      };
+      const containers = [
+        ...Array.from(document.querySelectorAll('[role="menu"]')).map((el, i) => ({ kind: 'menu', i, el })),
+        ...Array.from(document.querySelectorAll('[role="dialog"]')).map((el, i) => ({ kind: 'dialog', i, el })),
+      ];
+      return containers.map(({ kind, i, el }) => ({
+        kind,
+        i,
+        ariaLabel: el.getAttribute('aria-label') || '',
+        controls: controlsOf(el),
+      }));
     });
 
-    console.log('\n========== SHARE-MENU CANDIDATES (hint=true first) ==========');
-    console.log(JSON.stringify(items, null, 2));
-    console.log('=============================================================');
+    console.log('\n========== SHARE POPUP(S) — menus & dialogs ==========');
+    console.log(JSON.stringify(popups, null, 2));
+    console.log(`\nScreenshot: ${shot}`);
+    console.log('=====================================================');
   } finally {
     await browser.close();
   }
