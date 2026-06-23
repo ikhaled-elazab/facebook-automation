@@ -86,14 +86,24 @@ async function main() {
     await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(4000);
 
-    // Find + click the Share button.
+    // Find + click the Share button using MOUSE COORDINATES (same as the real code
+    // fb/actions/share.js — a plain .click() did not open the menu).
     let clicked = false;
     for (const sel of SHARE_BTN_SELECTORS) {
       const btn = await page.$(sel);
       if (btn) {
         await btn.scrollIntoViewIfNeeded().catch(() => {});
         await page.waitForTimeout(800);
-        await btn.click().catch(() => {});
+        const box = await btn.boundingBox();
+        if (box) {
+          const cx = box.x + box.width / 2;
+          const cy = box.y + box.height / 2;
+          await page.mouse.move(cx, cy, { steps: 10 });
+          await page.waitForTimeout(500);
+          await page.mouse.click(cx, cy);
+        } else {
+          await btn.click().catch(() => {});
+        }
         clicked = true;
         console.log(`clicked Share via: ${sel}`);
         break;
@@ -104,7 +114,8 @@ async function main() {
       process.exit(1);
     }
 
-    await page.waitForTimeout(3500);
+    // Give the share dialog/menu time to fully render its contents.
+    await page.waitForTimeout(6000);
 
     // Screenshot for visual confirmation (scp it off the VPS if you want to eyeball it).
     const path2 = require('path');
@@ -144,16 +155,49 @@ async function main() {
         ...Array.from(document.querySelectorAll('[role="menu"]')).map((el, i) => ({ kind: 'menu', i, el })),
         ...Array.from(document.querySelectorAll('[role="dialog"]')).map((el, i) => ({ kind: 'dialog', i, el })),
       ];
-      return containers.map(({ kind, i, el }) => ({
+      const popupList = containers.map(({ kind, i, el }) => ({
         kind,
         i,
         ariaLabel: el.getAttribute('aria-label') || '',
         controls: controlsOf(el),
       }));
+
+      // Global safety net: ANY visible element whose own text mentions share/now,
+      // regardless of role — catches a "Share now" rendered as a plain div/span.
+      const NOW = /الآن|مشاركة|share now|share to|نشر/i;
+      const nowHits = [];
+      const seen = new Set();
+      for (const el of Array.from(document.querySelectorAll('*'))) {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        // own text only (exclude text contributed by children)
+        const own = Array.from(el.childNodes)
+          .filter((n) => n.nodeType === 3)
+          .map((n) => n.textContent)
+          .join('')
+          .trim();
+        const aria = el.getAttribute('aria-label') || '';
+        const label = (own || aria).trim();
+        if (!label || label.length > 50 || !NOW.test(label)) continue;
+        const key = el.tagName + '|' + label;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        nowHits.push({
+          tag: el.tagName.toLowerCase(),
+          role: el.getAttribute('role') || '',
+          clickableAncestorRole:
+            (el.closest('[role="button"],[role="menuitem"],[role="option"],a') || {}).getAttribute?.('role') || '',
+          aria,
+          text: own.slice(0, 50),
+        });
+      }
+      return { popupList, nowHits };
     });
 
     console.log('\n========== SHARE POPUP(S) — menus & dialogs ==========');
-    console.log(JSON.stringify(popups, null, 2));
+    console.log(JSON.stringify(popups.popupList, null, 2));
+    console.log('\n========== "now / share" TEXT HITS (any element) ==========');
+    console.log(JSON.stringify(popups.nowHits, null, 2));
     console.log(`\nScreenshot: ${shot}`);
     console.log('=====================================================');
   } finally {
