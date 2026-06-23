@@ -32,6 +32,20 @@ screenshots/
 debug_dom*.html
 dump*.html
 
+# Playwright MCP captures + ad-hoc diagnostic artifacts (logged-in UI / scraped PII)
+.playwright-mcp/
+*-snapshot.md
+share-menu.md
+fb-login-state.png
+page-*.png
+
+# Throwaway diagnostic scripts (hit FB live / not part of the app)
+dumpFeed.js
+verifyLatest.js
+checkActions.js
+dumpShareDialog.js
+checkSession.js
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db
