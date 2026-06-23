@@ -1,0 +1,361 @@
+- generic [ref=e1]:
+  - generic [ref=e5]:
+    - banner:
+      - generic [ref=e6]:
+        - generic:
+          - generic:
+            - button [disabled]:
+              - img
+        - link "فيسبوك" [ref=e7] [cursor=pointer]:
+          - /url: /
+          - img [ref=e8]
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic:
+            - generic:
+              - generic:
+                - button:
+                  - img
+        - generic [ref=e19]:
+          - generic:
+            - img
+          - combobox "بحث في فيسبوك" [ref=e20] [cursor=pointer]
+      - navigation "فيسبوك" [ref=e24]:
+        - list [ref=e25]:
+          - listitem [ref=e26]:
+            - link "الصفحة الرئيسية" [ref=e29] [cursor=pointer]:
+              - /url: /
+              - img [ref=e31]
+          - listitem [ref=e33]:
+            - link "ريلز" [ref=e36] [cursor=pointer]:
+              - /url: /reel/?s=tab
+              - img [ref=e38]
+          - listitem [ref=e41]:
+            - link "الأصدقاء" [ref=e44] [cursor=pointer]:
+              - /url: /friends/
+              - img [ref=e46]
+          - listitem [ref=e48]:
+            - link "Marketplace" [ref=e51] [cursor=pointer]:
+              - /url: /marketplace/?ref=app_tab
+              - img [ref=e53]
+          - listitem [ref=e55]:
+            - link "المجموعات" [ref=e58] [cursor=pointer]:
+              - /url: /groups/
+              - img [ref=e60]
+      - navigation "عناصر التحكم وإعدادات الحساب" [ref=e63]:
+        - button "قائمة فيسبوك" [ref=e67] [cursor=pointer]:
+          - img [ref=e68]
+        - generic [ref=e73]:
+          - button "رسائل 9 غير مقروءة، 9" [ref=e74] [cursor=pointer]:
+            - img [ref=e75]
+          - button [ref=e77] [cursor=pointer]:
+            - generic [ref=e80]:
+              - generic [ref=e81]: 9 دردشة غير مقروءة
+              - generic [ref=e82]: "9"
+        - generic [ref=e86]:
+          - button "إشعارات غير مقروءة، 4" [ref=e87] [cursor=pointer]:
+            - img [ref=e88]
+          - button [ref=e90] [cursor=pointer]:
+            - generic [ref=e91]:
+              - generic [ref=e92]: عدد الإشعارات غير المقروءة
+              - generic [ref=e93]: "4"
+        - button "ملفك الشخصي" [ref=e96] [cursor=pointer]:
+          - generic [ref=e97]:
+            - img "ملفك الشخصي" [ref=e98]
+            - img [ref=e105]
+    - main [ref=e112]:
+      - generic [ref=e113]:
+        - link [ref=e800] [cursor=pointer]:
+          - /url: https://www.facebook.com/photo/?fbid=1990689458153204&set=p.1990689458153204
+        - generic [ref=e134]:
+          - generic [ref=e138]:
+            - generic [ref=e140]:
+              - heading [level=1] [ref=e801]:
+                - generic [ref=e143]: عقارات التجمع الخامس
+              - generic [ref=e149]:
+                - generic [ref=e151]:
+                  - img [ref=e153]
+                  - generic [ref=e155]: مجموعة ‏عامة‏
+                - generic [ref=e157]: ·
+                - link [ref=e802] [cursor=pointer]:
+                  - /url: /groups/900264750176214/members/
+                  - text: ‏٨٦٫٤ ألف‏ عضو
+            - list [ref=e164]:
+              - listitem [ref=e165]:
+                - link [ref=e803] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095719624371/
+                  - img [ref=e804]
+              - listitem [ref=e175]:
+                - link [ref=e805] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095579852181/
+                  - img [ref=e806]
+              - listitem [ref=e185]:
+                - link [ref=e807] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095560000899/
+                  - img [ref=e808]
+              - listitem [ref=e195]:
+                - link [ref=e809] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095513763028/
+                  - img [ref=e810]
+              - listitem [ref=e205]:
+                - link [ref=e811] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095395572283/
+                  - img [ref=e812]
+              - listitem [ref=e215]:
+                - link [ref=e813] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095350143363/
+                  - img [ref=e814]
+              - listitem [ref=e225]:
+                - link [ref=e815] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095344793201/
+                  - img [ref=e816]
+              - listitem [ref=e235]:
+                - link [ref=e817] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095293118765/
+                  - img [ref=e818]
+              - listitem [ref=e245]:
+                - link [ref=e819] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095269900244/
+                  - img [ref=e820]
+              - listitem [ref=e255]:
+                - link [ref=e821] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095244173824/
+                  - img [ref=e822]
+              - listitem [ref=e265]:
+                - link [ref=e823] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095228111183/
+                  - img [ref=e824]
+              - listitem [ref=e275]:
+                - link [ref=e825] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095216154970/
+                  - img [ref=e826]
+              - listitem [ref=e285]:
+                - link [ref=e827] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095191310751/
+                  - img [ref=e828]
+              - listitem [ref=e295]:
+                - link [ref=e829] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095182163715/
+                  - img [ref=e830]
+              - listitem [ref=e305]:
+                - link [ref=e831] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095178084118/
+                  - img [ref=e832]
+              - listitem [ref=e315]:
+                - link [ref=e833] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095170286331/
+                  - img [ref=e834]
+              - listitem [ref=e325]:
+                - link [ref=e835] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095162179561/
+                  - img [ref=e836]
+              - listitem [ref=e335]:
+                - link [ref=e837] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095127230154/
+                  - img [ref=e838]
+              - listitem [ref=e345]:
+                - link [ref=e839] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095120007589/
+                  - img [ref=e840]
+              - listitem [ref=e355]:
+                - link [ref=e841] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095076335691/
+                  - img [ref=e842]
+              - listitem:
+                - link [ref=e843] [cursor=pointer]:
+                  - /url: /groups/abomahdy/members/
+                  - img [ref=e366]
+          - generic [ref=e371]:
+            - button [ref=e844] [cursor=pointer]:
+              - generic [ref=e380]: دعوة
+            - button [ref=e845] [cursor=pointer]:
+              - generic [ref=e388]: مشاركة
+            - button [ref=e846] [cursor=pointer]:
+              - generic [ref=e394]:
+                - img [ref=e395]
+                - generic [ref=e398]: تم الانضمام
+                - img [ref=e399]
+            - button [ref=e847] [cursor=pointer]
+      - generic [ref=e413]:
+        - tablist [ref=e422]:
+          - generic [ref=e424]:
+            - generic [ref=e425]:
+              - generic [ref=e426]: المزيد
+              - img [ref=e428]
+            - tab [ref=e848] [cursor=pointer]:
+              - generic [ref=e433]: حول
+            - tab [selected] [ref=e849] [cursor=pointer]:
+              - generic [ref=e437]: مناقشة
+            - tab [ref=e850] [cursor=pointer]:
+              - generic [ref=e441]: العناصر المميزة
+            - tab [ref=e851] [cursor=pointer]:
+              - generic [ref=e445]: الأشخاص
+            - tab [ref=e852] [cursor=pointer]:
+              - generic [ref=e449]: المناسبات
+            - tab [ref=e853] [cursor=pointer]:
+              - generic [ref=e453]: الوسائط
+            - tab [ref=e854] [cursor=pointer]:
+              - generic [ref=e457]: الملفات
+        - generic [ref=e461]:
+          - button [ref=e855] [cursor=pointer]:
+            - img [ref=e465]
+          - button [ref=e856] [cursor=pointer]
+      - generic [ref=e479]:
+        - generic [ref=e483]:
+          - generic [ref=e484]:
+            - link [ref=e857] [cursor=pointer]:
+              - /url: /groups/900264750176214/user/61584152732853/
+              - img [ref=e491]
+            - button [ref=e858] [cursor=pointer]:
+              - generic [ref=e497]: اكتب شيئًا...
+          - generic [ref=e499]:
+            - button [ref=e859] [cursor=pointer]:
+              - generic [ref=e504]: منشور مجهول الهوية
+            - button [ref=e860] [cursor=pointer]:
+              - generic [ref=e509]: شعور/نشاط
+            - button [ref=e861] [cursor=pointer]:
+              - generic [ref=e514]: استطلاع رأي
+        - generic [ref=e515]:
+          - generic [ref=e521]:
+            - generic [ref=e523]:
+              - generic [ref=e525]: العناصر المميزة
+              - generic [ref=e528]:
+                - text: ‏6‏ عناصر جديدة
+                - generic [ref=e530]: شارة محتوى مميز
+            - button [ref=e862] [cursor=pointer]
+            - button [ref=e863] [cursor=pointer]
+          - feed [ref=e539]:
+            - button [ref=e864] [cursor=pointer]:
+              - generic [ref=e544]: فرز موجز المجموعة حسب
+              - heading [level=2] [ref=e865]:
+                - generic [ref=e546]: منشورات جديدة
+              - img [ref=e547]
+            - article [ref=e553]:
+              - generic [ref=e562]:
+                - generic [ref=e564]:
+                  - link [ref=e567] [cursor=pointer]:
+                    - /url: /groups/900264750176214/user/61590743772422/?__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=%3C%2CP-R
+                    - link [ref=e572]:
+                      - /url: /groups/900264750176214/user/61590743772422/?__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=%3C%3C%2CP-R
+                      - img [ref=e574]
+                  - generic [ref=e579]:
+                    - heading [level=2] [ref=e866]:
+                      - link [ref=e867] [cursor=pointer]:
+                        - /url: /groups/900264750176214/user/61590743772422/?__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=-UC%2CP-R
+                        - generic [ref=e590]: ياسمين بدر
+                    - generic [ref=e593]:
+                      - link [ref=e868] [cursor=pointer]:
+                        - /url: https://www.facebook.com/groups/abomahdy/posts/3008933512642650/?__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=%2CO%2CP-R
+                        - text: ١ د
+                      - generic [ref=e599]: ·
+                      - img [ref=e869]
+                  - button [ref=e870] [cursor=pointer]:
+                    - img [ref=e613]
+                - generic [ref=e619]:
+                  - link [ref=e871] [cursor=pointer]:
+                    - /url: https://www.facebook.com/photo/?fbid=1031722916043406&set=a.201606592388380&__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=EH-y-R
+                    - img [ref=e872]
+                  - generic [ref=e629]:
+                    - link [ref=e873] [cursor=pointer]:
+                      - /url: /stories/107978101751230/UzpfSVNDOjE2MDI5MjE4NjE0NTA1MTc=/?view_single=false&__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=%3C%3C%2CP-y-R
+                      - generic [ref=e634]:
+                        - img [ref=e874]
+                        - generic [ref=e641]:
+                          - generic [ref=e644]: مؤشر حالة الاتصال
+                          - generic [ref=e645]: نشط
+                    - generic [ref=e646]:
+                      - heading [level=3] [ref=e875]:
+                        - link [ref=e876] [cursor=pointer]:
+                          - /url: https://www.facebook.com/artdesign.eg?__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=-UC%2CP-y-R
+                          - generic [ref=e656]: Art Design
+                      - generic [ref=e659]:
+                        - link [ref=e877] [cursor=pointer]:
+                          - /url: https://www.facebook.com/artdesign.eg/posts/pfbid02KiFCHo2Du1SJA6qiKBzX7c9dCdYRTJnUe9k2rpdsLCQXqneinY75MGoUUNPU7xqXl?__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=%2CO%2CP-y-R
+                          - text: ٢ س
+                        - generic [ref=e665]: ·
+                        - img [ref=e878]
+                  - generic [ref=e685]:
+                    - img [ref=e879]
+                    - text: نصمم اليوم... لنصنع علامة تُذكر غداً....
+                    - button [ref=e880] [cursor=pointer]: عرض المزيد
+                - generic [ref=e691]:
+                  - generic [ref=e695]:
+                    - generic [ref=e696]:
+                      - button [ref=e881] [cursor=pointer]
+                      - button [ref=e882] [cursor=pointer]:
+                        - img [ref=e703]
+                    - button [ref=e883] [cursor=pointer]
+                    - button [ref=e884] [cursor=pointer]
+                  - generic [ref=e722]:
+                    - button [ref=e724] [cursor=pointer]:
+                      - img [ref=e726]
+                    - generic [ref=e732]:
+                      - generic [ref=e767]:
+                        - textbox [ref=e885]:
+                          - paragraph [ref=e769]
+                        - generic: اكتب تعليقًا عامًا...
+                      - list [ref=e771]:
+                        - listitem [ref=e772]:
+                          - button [ref=e886] [cursor=pointer]
+                        - listitem [ref=e776]:
+                          - button [ref=e887] [cursor=pointer]:
+                            - img [ref=e779]
+                        - listitem [ref=e782]:
+                          - button [ref=e888] [cursor=pointer]
+                        - listitem [ref=e786]:
+                          - button [ref=e889] [cursor=pointer]
+                        - listitem [ref=e790]:
+                          - button [ref=e890] [cursor=pointer]
+            - generic [ref=e735]:
+              - article [ref=e736]:
+                - status [ref=e891]
+              - article [ref=e750]:
+                - status [ref=e892]
+    - dialog "إنشاء منشور" [ref=e901]:
+      - generic [ref=e909]:
+        - generic [ref=e910]:
+          - dialog "إنشاء منشور" [ref=e911]:
+            - heading "إنشاء منشور" [level=2] [ref=e913]:
+              - generic [ref=e915]: إنشاء منشور
+            - button "إغلاق مربع حوار أداة الإنشاء" [ref=e918] [cursor=pointer]:
+              - img [ref=e919]
+          - generic [ref=e925]:
+            - generic [ref=e930]: نشر محتوى مجهول الهوية
+            - switch "تبديل المنشور مجهول الهوية" [ref=e935] [cursor=pointer]
+          - generic [ref=e936]:
+            - link "يوميات Sandy Aba Aldahab" [ref=e938] [cursor=pointer]:
+              - /url: https://www.facebook.com/profile.php?id=61584152732853&__tn__=%3C
+              - img [ref=e940]
+            - generic [ref=e944]:
+              - generic [ref=e946]: Sandy Aba Aldahab
+              - button "يمكنك تعديل الخصوصية. تتم المشاركة مع مجموعة عامة." [disabled] [ref=e951]:
+                - generic [ref=e955]:
+                  - img [ref=e957]
+                  - generic [ref=e958]: مجموعة عامة
+        - generic [ref=e961]:
+          - generic [ref=e964]:
+            - textbox [active] [ref=e965]:
+              - paragraph [ref=e966]
+            - generic: إنشاء منشور عام...
+          - button "عرض خيارات الخلفية" [ref=e969] [cursor=pointer]
+          - button "الرمز التعبيري" [ref=e977] [cursor=pointer]:
+            - img "الرمز التعبيري" [ref=e983]
+        - generic [ref=e984]:
+          - generic [ref=e985]:
+            - button "إضافة إلى منشورك" [ref=e987] [cursor=pointer]:
+              - generic [ref=e988]: إضافة إلى منشورك
+            - generic [ref=e989]:
+              - button "صورة/فيديو" [ref=e993] [cursor=pointer]:
+                - img [ref=e999]
+              - button "إشارة إلى الأشخاص" [ref=e1003] [cursor=pointer]:
+                - img [ref=e1009]
+              - button "دخول" [ref=e1013] [cursor=pointer]:
+                - img [ref=e1019]
+              - button "شعور/نشاط" [ref=e1023] [cursor=pointer]:
+                - img [ref=e1029]
+              - button "المزيد من خيارات النشر" [ref=e1033] [cursor=pointer]
+          - button "نشر" [disabled] [ref=e1044]:
+            - generic [ref=e1047]: نشر
+    - button "رسالة جديدة" [ref=e796] [cursor=pointer]:
+      - img [ref=e797]
+  - button "Choose File" [ref=e764]

@@ -1,0 +1,313 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e5]:
+    - banner:
+      - generic [ref=e6]:
+        - generic:
+          - generic:
+            - button [disabled]:
+              - img
+        - link "فيسبوك" [ref=e7] [cursor=pointer]:
+          - /url: /
+          - img [ref=e8]
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic:
+            - generic:
+              - generic:
+                - button:
+                  - img
+        - generic [ref=e19]:
+          - generic:
+            - img
+          - combobox "بحث في فيسبوك" [ref=e20] [cursor=pointer]
+      - navigation "فيسبوك" [ref=e24]:
+        - list [ref=e25]:
+          - listitem [ref=e26]:
+            - link "الصفحة الرئيسية" [ref=e29] [cursor=pointer]:
+              - /url: /
+              - img [ref=e31]
+          - listitem [ref=e33]:
+            - link "ريلز" [ref=e36] [cursor=pointer]:
+              - /url: /reel/?s=tab
+              - img [ref=e38]
+          - listitem [ref=e41]:
+            - link "الأصدقاء" [ref=e44] [cursor=pointer]:
+              - /url: /friends/
+              - img [ref=e46]
+          - listitem [ref=e48]:
+            - link "Marketplace" [ref=e51] [cursor=pointer]:
+              - /url: /marketplace/?ref=app_tab
+              - img [ref=e53]
+          - listitem [ref=e55]:
+            - link "المجموعات" [ref=e58] [cursor=pointer]:
+              - /url: /groups/
+              - img [ref=e60]
+      - navigation "عناصر التحكم وإعدادات الحساب" [ref=e63]:
+        - button "قائمة فيسبوك" [ref=e67] [cursor=pointer]:
+          - img [ref=e68]
+        - generic [ref=e73]:
+          - button "رسائل 9 غير مقروءة، 9" [ref=e74] [cursor=pointer]:
+            - img [ref=e75]
+          - button [ref=e77] [cursor=pointer]:
+            - generic [ref=e80]:
+              - generic [ref=e81]: 9 دردشة غير مقروءة
+              - generic [ref=e82]: "9"
+        - generic [ref=e86]:
+          - button "إشعارات غير مقروءة، 4" [ref=e87] [cursor=pointer]:
+            - img [ref=e88]
+          - button [ref=e90] [cursor=pointer]:
+            - generic [ref=e91]:
+              - generic [ref=e92]: عدد الإشعارات غير المقروءة
+              - generic [ref=e93]: "4"
+        - button "ملفك الشخصي" [ref=e96] [cursor=pointer]:
+          - generic [ref=e97]:
+            - img "ملفك الشخصي" [ref=e98]
+            - img [ref=e105]
+    - main [ref=e112]:
+      - generic [ref=e113]:
+        - link "صورة غلاف" [ref=e125] [cursor=pointer]:
+          - /url: https://www.facebook.com/photo/?fbid=1990689458153204&set=p.1990689458153204
+        - generic [ref=e134]:
+          - generic [ref=e138]:
+            - generic [ref=e140]:
+              - heading "عقارات التجمع الخامس" [level=1] [ref=e142]:
+                - generic [ref=e143]: عقارات التجمع الخامس
+              - generic [ref=e149]:
+                - generic [ref=e151]:
+                  - img [ref=e153]
+                  - generic [ref=e155]: مجموعة ‏عامة‏
+                - generic [ref=e157]: ·
+                - link "‏٨٦٫٤ ألف‏ عضو" [ref=e160] [cursor=pointer]:
+                  - /url: /groups/900264750176214/members/
+            - list [ref=e164]:
+              - listitem [ref=e165]:
+                - link "Properties for sale" [ref=e169] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095719624371/
+                  - img "Properties for sale" [ref=e171]
+              - listitem [ref=e175]:
+                - link "Bost Cat" [ref=e179] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095579852181/
+                  - img "Bost Cat" [ref=e181]
+              - listitem [ref=e185]:
+                - link "Mayar Samer" [ref=e189] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095560000899/
+                  - img "Mayar Samer" [ref=e191]
+              - listitem [ref=e195]:
+                - link "Kerolls Raid Elpop" [ref=e199] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095513763028/
+                  - img "Kerolls Raid Elpop" [ref=e201]
+              - listitem [ref=e205]:
+                - link "Alaa Noureldein" [ref=e209] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095395572283/
+                  - img "Alaa Noureldein" [ref=e211]
+              - listitem [ref=e215]:
+                - link "ElAsema buildings" [ref=e219] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095350143363/
+                  - img "ElAsema buildings" [ref=e221]
+              - listitem [ref=e225]:
+                - link "Retaj Alsawy" [ref=e229] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095344793201/
+                  - img "Retaj Alsawy" [ref=e231]
+              - listitem [ref=e235]:
+                - link "احمد صلاح" [ref=e239] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095293118765/
+                  - img "احمد صلاح" [ref=e241]
+              - listitem [ref=e245]:
+                - link "Ibrahem Safwat" [ref=e249] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095269900244/
+                  - img "Ibrahem Safwat" [ref=e251]
+              - listitem [ref=e255]:
+                - link "Yasser Gamal" [ref=e259] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095244173824/
+                  - img "Yasser Gamal" [ref=e261]
+              - listitem [ref=e265]:
+                - link "ORA Furniture Solutions" [ref=e269] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095228111183/
+                  - img "ORA Furniture Solutions" [ref=e271]
+              - listitem [ref=e275]:
+                - link "Sameh RE" [ref=e279] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095216154970/
+                  - img "Sameh RE" [ref=e281]
+              - listitem [ref=e285]:
+                - link "Ahmed Akil" [ref=e289] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095191310751/
+                  - img "Ahmed Akil" [ref=e291]
+              - listitem [ref=e295]:
+                - link "داماك العقاريه" [ref=e299] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095182163715/
+                  - img "داماك العقاريه" [ref=e301]
+              - listitem [ref=e305]:
+                - link "Raafat" [ref=e309] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095178084118/
+                  - img "Raafat" [ref=e311]
+              - listitem [ref=e315]:
+                - link "Elfarouk Re" [ref=e319] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095170286331/
+                  - img "Elfarouk Re" [ref=e321]
+              - listitem [ref=e325]:
+                - link "ابو زياد محمد" [ref=e329] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095162179561/
+                  - img "ابو زياد محمد" [ref=e331]
+              - listitem [ref=e335]:
+                - link "Hiba Osman Mahmoed" [ref=e339] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095127230154/
+                  - img "Hiba Osman Mahmoed" [ref=e341]
+              - listitem [ref=e345]:
+                - link "Toka Tarek" [ref=e349] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095120007589/
+                  - img "Toka Tarek" [ref=e351]
+              - listitem [ref=e355]:
+                - link "Ran Neem" [ref=e359] [cursor=pointer]:
+                  - /url: /groups/900264750176214/user/100095076335691/
+                  - img "Ran Neem" [ref=e361]
+              - listitem:
+                - link "عرض الجميع" [ref=e365] [cursor=pointer]:
+                  - /url: /groups/abomahdy/members/
+                  - img [ref=e366]
+          - generic [ref=e371]:
+            - button "دعوة" [ref=e376] [cursor=pointer]:
+              - generic [ref=e380]: دعوة
+            - button "مشاركة المجموعة" [ref=e384] [cursor=pointer]:
+              - generic [ref=e388]: مشاركة
+            - button "تم الانضمام" [ref=e393] [cursor=pointer]:
+              - generic [ref=e394]:
+                - img [ref=e395]
+                - generic [ref=e398]: تم الانضمام
+                - img [ref=e399]
+            - button "عرض المجموعات الموصى بها" [ref=e403] [cursor=pointer]
+      - generic [ref=e413]:
+        - tablist [ref=e422]:
+          - generic [ref=e424]:
+            - generic [ref=e425]:
+              - generic [ref=e426]: المزيد
+              - img [ref=e428]
+            - tab "حول" [ref=e431] [cursor=pointer]:
+              - generic [ref=e433]: حول
+            - tab "مناقشة" [selected] [ref=e435] [cursor=pointer]:
+              - generic [ref=e437]: مناقشة
+            - tab "العناصر المميزة" [ref=e439] [cursor=pointer]:
+              - generic [ref=e441]: العناصر المميزة
+            - tab "الأشخاص" [ref=e443] [cursor=pointer]:
+              - generic [ref=e445]: الأشخاص
+            - tab "المناسبات" [ref=e447] [cursor=pointer]:
+              - generic [ref=e449]: المناسبات
+            - tab "الوسائط" [ref=e451] [cursor=pointer]:
+              - generic [ref=e453]: الوسائط
+            - tab "الملفات" [ref=e455] [cursor=pointer]:
+              - generic [ref=e457]: الملفات
+        - generic [ref=e461]:
+          - button "بحث في هذه المجموعة" [ref=e463] [cursor=pointer]:
+            - img [ref=e465]
+          - button "المزيد" [ref=e469] [cursor=pointer]
+      - generic [ref=e479]:
+        - generic [ref=e483]:
+          - generic [ref=e484]:
+            - link "ملف Sandy Aba Aldahab الشخصي" [ref=e488] [cursor=pointer]:
+              - /url: /groups/900264750176214/user/61584152732853/
+              - img [ref=e491]
+            - button "اكتب شيئًا..." [ref=e495] [cursor=pointer]:
+              - generic [ref=e497]: اكتب شيئًا...
+          - generic [ref=e499]:
+            - button "منشور مجهول الهوية" [ref=e500] [cursor=pointer]:
+              - generic [ref=e504]: منشور مجهول الهوية
+            - button "شعور/نشاط" [ref=e505] [cursor=pointer]:
+              - generic [ref=e509]: شعور/نشاط
+            - button "استطلاع رأي" [ref=e510] [cursor=pointer]:
+              - generic [ref=e514]: استطلاع رأي
+        - generic [ref=e515]:
+          - generic [ref=e521]:
+            - generic [ref=e523]:
+              - generic [ref=e525]: العناصر المميزة
+              - generic [ref=e528]:
+                - text: ‏6‏ عناصر جديدة
+                - generic [ref=e530]: شارة محتوى مميز
+            - button "حول قسم العناصر المميزة" [ref=e532] [cursor=pointer]
+            - button "توسيع/طي قسم العناصر المميزة" [ref=e536] [cursor=pointer]
+          - feed [ref=e539]:
+            - button "فرز موجز المجموعة حسب منشورات جديدة" [ref=e543] [cursor=pointer]:
+              - generic [ref=e544]: فرز موجز المجموعة حسب
+              - heading "منشورات جديدة" [level=2] [ref=e545]:
+                - generic [ref=e546]: منشورات جديدة
+              - img [ref=e547]
+            - article [ref=e553]:
+              - generic [ref=e562]:
+                - generic [ref=e564]:
+                  - link [ref=e567] [cursor=pointer]:
+                    - /url: /groups/900264750176214/user/61590743772422/?__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=%3C%2CP-R
+                    - link [ref=e572]:
+                      - /url: /groups/900264750176214/user/61590743772422/?__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=%3C%3C%2CP-R
+                      - img [ref=e574]
+                  - generic [ref=e579]:
+                    - heading "ياسمين بدر" [level=2] [ref=e583]:
+                      - link "ياسمين بدر" [ref=e589] [cursor=pointer]:
+                        - /url: /groups/900264750176214/user/61590743772422/?__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=-UC%2CP-R
+                        - generic [ref=e590]: ياسمين بدر
+                    - generic [ref=e593]:
+                      - link "الآن" [ref=e597] [cursor=pointer]:
+                        - /url: https://www.facebook.com/groups/abomahdy/posts/3008933512642650/?__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=%2CO%2CP-R
+                      - generic [ref=e599]: ·
+                      - img "تمت المشاركة مع مجموعة عامة" [ref=e604]
+                  - button "الإجراءات لهذا المنشور بواسطة ياسمين بدر" [ref=e612] [cursor=pointer]:
+                    - img [ref=e613]
+                - generic [ref=e619]:
+                  - link "قد يكون تصميم جرافيكس لـ ‏نص‏" [ref=e622] [cursor=pointer]:
+                    - /url: https://www.facebook.com/photo/?fbid=1031722916043406&set=a.201606592388380&__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=EH-y-R
+                    - img "قد يكون تصميم جرافيكس لـ ‏نص‏" [ref=e627]
+                  - generic [ref=e629]:
+                    - link "Art Design، مشاهدة القصة" [ref=e633] [cursor=pointer]:
+                      - /url: /stories/107978101751230/UzpfSVNDOjE2MDI5MjE4NjE0NTA1MTc=/?view_single=false&__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=%3C%3C%2CP-y-R
+                      - generic [ref=e634]:
+                        - img "Art Design، مشاهدة القصة" [ref=e635]
+                        - generic [ref=e641]:
+                          - generic [ref=e644]: مؤشر حالة الاتصال
+                          - generic [ref=e645]: نشط
+                    - generic [ref=e646]:
+                      - heading "Art Design" [level=3] [ref=e650]:
+                        - link "Art Design" [ref=e655] [cursor=pointer]:
+                          - /url: https://www.facebook.com/artdesign.eg?__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=-UC%2CP-y-R
+                          - generic [ref=e656]: Art Design
+                      - generic [ref=e659]:
+                        - link "٢ س" [ref=e663] [cursor=pointer]:
+                          - /url: https://www.facebook.com/artdesign.eg/posts/pfbid02KiFCHo2Du1SJA6qiKBzX7c9dCdYRTJnUe9k2rpdsLCQXqneinY75MGoUUNPU7xqXl?__cft__[0]=AZZvCB4yUw2ABais9mvL-G47VOJ5pv_ouReLxq6Q_zMpVCdQxxe2wJFeeR6duf7YhWKtNk4_yGKM1DAJXwZo6C0c5xtzCqTDEMP3U3DL34P_-2yNy02rclRR3r--z9Cq_zCn4PTsXmNgjw2PikeAnb9EzSfvqgOqjZkKFncyKb0txYrc2XiOkdLIBeeJlOkBkyPwmowbPoMBjrzwpQK08mjDxhn6XUXTtWCvRCHg_XwqPA&__tn__=%2CO%2CP-y-R
+                        - generic [ref=e665]: ·
+                        - img "تمت المشاركة مع العامة" [ref=e670]
+                  - generic [ref=e685]:
+                    - img "🌍" [ref=e687]
+                    - text: نصمم اليوم... لنصنع علامة تُذكر غداً....
+                    - button "عرض المزيد" [ref=e688] [cursor=pointer]
+                - generic [ref=e691]:
+                  - generic [ref=e695]:
+                    - generic [ref=e696]:
+                      - button "أعجبني" [ref=e697] [cursor=pointer]
+                      - button "تفاعل" [ref=e702] [cursor=pointer]:
+                        - img [ref=e703]
+                    - button "كتابة تعليق" [ref=e706] [cursor=pointer]
+                    - button "يمكنك إرسال هذا إلى الأصدقاء أو نشره على ملفك الشخصي." [ref=e711] [cursor=pointer]
+                  - generic [ref=e722]:
+                    - button [ref=e724] [cursor=pointer]:
+                      - img [ref=e726]
+                    - generic [ref=e732]:
+                      - generic [ref=e767]:
+                        - textbox "اكتب تعليقًا عامًا..." [ref=e768]:
+                          - paragraph [ref=e769]
+                        - generic: اكتب تعليقًا عامًا...
+                      - list [ref=e771]:
+                        - listitem [ref=e772]:
+                          - button "تعليق بملصق أفاتار" [ref=e774] [cursor=pointer]
+                        - listitem [ref=e776]:
+                          - button "إدراج رمز تعبيري" [ref=e778] [cursor=pointer]:
+                            - img [ref=e779]
+                        - listitem [ref=e782]:
+                          - button "إرفاق صورة أو فيديو" [ref=e784] [cursor=pointer]
+                        - listitem [ref=e786]:
+                          - button "تعليق بصورة GIF" [ref=e788] [cursor=pointer]
+                        - listitem [ref=e790]:
+                          - button "تعليق بملصق" [ref=e792] [cursor=pointer]
+            - generic [ref=e735]:
+              - article [ref=e736]:
+                - status "جارٍ التحميل..." [ref=e737]
+              - article [ref=e750]:
+                - status "جارٍ التحميل..." [ref=e751]
+    - button "رسالة جديدة" [ref=e796] [cursor=pointer]:
+      - img [ref=e797]
+  - button "Choose File" [ref=e764]

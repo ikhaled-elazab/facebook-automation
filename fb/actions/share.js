@@ -167,6 +167,7 @@ async function shareDirectlyToGroup(page, postUrl, groupUrl, account, h) {
 
     let composer = null;
     for (const sel of [
+      'div[role="button"]:has-text("اكتب شيئًا")',
       '[aria-label="Write something to the group…"]',
       '[placeholder="Write something to the group…"]',
       'div[role="button"]:has-text("Write something")',
@@ -184,6 +185,7 @@ async function shareDirectlyToGroup(page, postUrl, groupUrl, account, h) {
       await h.randomDelay(3000, 5000);
       await page.evaluate(() => window.scrollBy(0, 300));
       for (const sel of [
+        'div[role="button"]:has-text("اكتب شيئًا")',
         '[aria-label="Write something to the group…"]',
         'div[role="button"]:has-text("Write something")',
         'div[contenteditable="true"][role="textbox"]',
@@ -223,7 +225,7 @@ async function shareDirectlyToGroup(page, postUrl, groupUrl, account, h) {
     await h.randomDelay(2000, 4000);
 
     let posted = false;
-    for (const sel of ['div[aria-label="Post"]:has-text("Post")', 'button:has-text("Post")']) {
+    for (const sel of ['[aria-label="نشر"]', 'div[aria-label="Post"]:has-text("Post")', 'button:has-text("Post")']) {
       const btn = await page.$(sel);
       if (btn) {
         await btn.click();
